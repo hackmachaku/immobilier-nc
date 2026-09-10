@@ -1,0 +1,83 @@
+{
+  "timestamp": "2026-09-10T21:30:53.344782+00:00",
+  "status": "WARNING_OR_ERROR",
+  "is_healthy": false,
+  "logs_summary": {
+    "file_exists": true,
+    "log_path": "C:\\Users\\WD4060\\OneDrive - ENGIE\\Documents\\Antigravity\\Immobilier NC\\logs\\pipeline.log",
+    "total_lines": 265,
+    "info_count": 152,
+    "warning_count": 113,
+    "error_count": 0,
+    "errors": [],
+    "warnings": [
+      "L255: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=508074, source=bienmeloger.nc",
+      "L256: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=429402, source=immobilier.nc",
+      "L257: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=514607, source=immobilier.nc",
+      "L258: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=432356, source=immobilier.nc",
+      "L259: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=339905, source=immobilier.nc",
+      "L260: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=338256, source=immobilier.nc",
+      "L261: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=507502, source=bienmeloger.nc",
+      "L262: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=a1ca5992-19c2-4743-af8d-d63ee2b1d4e4, source=yatoo.nc",
+      "L263: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=c0a8334a-03d5-43ba-9dfc-5159d88ef56e, source=yatoo.nc",
+      "L264: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=43ffa5a0-6640-485c-9328-4701a0272758, source=yatoo.nc"
+    ]
+  },
+  "database_summary": {
+    "total_listings": 563,
+    "active_listings": 563,
+    "data_quality": {
+      "null_prices": 0,
+      "null_surfaces": 109,
+      "valid_m2_ratio_pct": 80.6,
+      "is_clean": false
+    },
+    "sources_breakdown": [
+      {
+        "source": "immobilier.nc",
+        "count": 304,
+        "avg_price": 16240482.0,
+        "avg_m2": 147300.0
+      },
+      {
+        "source": "bienmeloger.nc",
+        "count": 171,
+        "avg_price": 11980595.0,
+        "avg_m2": 125214.0
+      },
+      {
+        "source": "yatoo.nc",
+        "count": 88,
+        "avg_price": 10400401.0,
+        "avg_m2": 124306.0
+      }
+    ],
+    "communes_breakdown": [
+      {
+        "commune": "NOUMEA",
+        "count": 307
+      },
+      {
+        "commune": "AUTRE",
+        "count": 84
+      },
+      {
+        "commune": "MONT_DORE",
+        "count": 67
+      },
+      {
+        "commune": "DUMBEA",
+        "count": 64
+      },
+      {
+        "commune": "PAITA",
+        "count": 41
+      }
+    ],
+    "views_functional": {
+      "v_marche_par_quartier_rows": 144,
+      "v_marche_par_typologie_rows": 79
+    },
+    "is_valid": false
+  }
+}

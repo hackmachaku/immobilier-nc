@@ -1,0 +1,344 @@
+{
+  "communes": {
+    "NOUMEA": {
+      "nom": "Nouméa",
+      "code_postal": 98800,
+      "code_insee": "98818",
+      "quartiers": [
+        {
+          "nom": "Anse Vata",
+          "secteur": "Sud Côtier",
+          "standing": "Premium",
+          "description": "Zone touristique et résidentielle haut de gamme en bord de mer",
+          "latitude": -22.302,
+          "longitude": 166.444
+        },
+        {
+          "nom": "Baie des Citrons",
+          "secteur": "Sud Côtier",
+          "standing": "Premium",
+          "description": "Plage, bars/restos, résidentiel prisé",
+          "latitude": -22.293,
+          "longitude": 166.436
+        },
+        {
+          "nom": "Val Plaisance",
+          "secteur": "Sud",
+          "standing": "Haut de gamme",
+          "description": "Quartier résidentiel calme proche des plages et de l'hippodrome",
+          "latitude": -22.298,
+          "longitude": 166.453
+        },
+        {
+          "nom": "Ouémo",
+          "secteur": "Sud Presqu'île",
+          "standing": "Premium",
+          "description": "Presqu'île résidentielle bordée par la baie de Sainte-Marie",
+          "latitude": -22.290,
+          "longitude": 166.471
+        },
+        {
+          "nom": "N'Géa",
+          "secteur": "Sud",
+          "standing": "Haut de gamme",
+          "description": "Quartier résidentiel sur les hauteurs avec vues lagon",
+          "latitude": -22.294,
+          "longitude": 166.463
+        },
+        {
+          "nom": "Tuband",
+          "secteur": "Sud",
+          "standing": "Haut de gamme",
+          "description": "Résidentiel récent proche de la promenade Pierre Vernier",
+          "latitude": -22.284,
+          "longitude": 166.464
+        },
+        {
+          "nom": "Faubourg Blanchot",
+          "secteur": "Centre Historique",
+          "standing": "Intermédiaire / Caractère",
+          "description": "Quartier colonial historique et résidentiel prisé",
+          "latitude": -22.275,
+          "longitude": 166.452
+        },
+        {
+          "nom": "Vallée des Colons",
+          "secteur": "Centre Résidentiel",
+          "standing": "Intermédiaire",
+          "description": "Quartier résidentiel central et familial (VDC)",
+          "latitude": -22.268,
+          "longitude": 166.458
+        },
+        {
+          "nom": "Port Plaisance",
+          "secteur": "Sud Ouest",
+          "standing": "Haut de gamme",
+          "description": "Marina Orphelinat, commerces, appartements avec vue baie",
+          "latitude": -22.285,
+          "longitude": 166.442
+        },
+        {
+          "nom": "Artillerie",
+          "secteur": "Sud Ouest",
+          "standing": "Haut de gamme",
+          "description": "Hauteurs surplombant la rade et le port",
+          "latitude": -22.278,
+          "longitude": 166.438
+        },
+        {
+          "nom": "Motor Pool",
+          "secteur": "Sud",
+          "standing": "Intermédiaire",
+          "description": "Résidentiel central proche collèges/lycées et cliniques",
+          "latitude": -22.288,
+          "longitude": 166.450
+        },
+        {
+          "nom": "Trianon",
+          "secteur": "Centre",
+          "standing": "Intermédiaire",
+          "description": "Zone résidentielle centrale",
+          "latitude": -22.281,
+          "longitude": 166.446
+        },
+        {
+          "nom": "Magenta",
+          "secteur": "Est",
+          "standing": "Intermédiaire",
+          "description": "Magenta Aérodrome, Haut-Magenta, plage de Magenta",
+          "latitude": -22.263,
+          "longitude": 166.471
+        },
+        {
+          "nom": "Tina",
+          "secteur": "Nord Est Côtier",
+          "standing": "Haut de gamme / Premium",
+          "description": "Tina-sur-mer et Presqu'île de Tina, golf, villas de standing",
+          "latitude": -22.253,
+          "longitude": 166.488
+        },
+        {
+          "nom": "Centre-Ville",
+          "secteur": "Centre",
+          "standing": "Intermédiaire",
+          "description": "Place des Cocotiers, commerces, immeubles mixtes",
+          "latitude": -22.271,
+          "longitude": 166.442
+        },
+        {
+          "nom": "Vallée du Tir",
+          "secteur": "Centre Nord",
+          "standing": "Accessible",
+          "description": "Quartier populaire et commerçant historique",
+          "latitude": -22.258,
+          "longitude": 166.444
+        },
+        {
+          "nom": "Rivière Salée",
+          "secteur": "Nord",
+          "standing": "Accessible",
+          "description": "Grand ensemble résidentiel nord",
+          "latitude": -22.235,
+          "longitude": 166.463
+        },
+        {
+          "nom": "Ducos",
+          "secteur": "Activité",
+          "standing": "Commercial / Industriel",
+          "description": "Principale zone industrielle et commerciale de Nouvelle-Calédonie",
+          "latitude": -22.247,
+          "longitude": 166.433
+        },
+        {
+          "nom": "Normandie",
+          "secteur": "Nord Est",
+          "standing": "Intermédiaire",
+          "description": "Périphérie nord vers le col de la Pirogue",
+          "latitude": -22.222,
+          "longitude": 166.488
+        }
+      ]
+    },
+    "DUMBEA": {
+      "nom": "Dumbéa",
+      "code_postal": 98835,
+      "code_insee": "98805",
+      "quartiers": [
+        {
+          "nom": "Koutio",
+          "secteur": "Dumbéa Sud",
+          "standing": "Accessible / Intermédiaire",
+          "description": "Secteur dense proche de Nouméa (lycée, médiathèque, commerces)",
+          "latitude": -22.203,
+          "longitude": 166.459
+        },
+        {
+          "nom": "Dumbéa-sur-Mer",
+          "secteur": "Dumbéa Centre",
+          "standing": "Intermédiaire",
+          "description": "Nouveau pôle urbain (Médipôle CHT, lycée Dick Ukeiwë, lotissements récents)",
+          "latitude": -22.185,
+          "longitude": 166.445
+        },
+        {
+          "nom": "Auteuil",
+          "secteur": "Dumbéa Sud",
+          "standing": "Accessible",
+          "description": "Zone résidentielle et commerciale (centre commercial Kenu-In)",
+          "latitude": -22.215,
+          "longitude": 166.467
+        },
+        {
+          "nom": "Katiramona",
+          "secteur": "Dumbéa Nord",
+          "standing": "Pavillonnaire",
+          "description": "Lotissements résidentiels calmes en vallée",
+          "latitude": -22.148,
+          "longitude": 166.495
+        },
+        {
+          "nom": "Nondoué",
+          "secteur": "Dumbéa Nord / Rivière",
+          "standing": "Rural / Pavillonnaire",
+          "description": "Cadre verdoyant le long de la rivière de Dumbéa",
+          "latitude": -22.142,
+          "longitude": 166.469
+        },
+        {
+          "nom": "Nakutakoin",
+          "secteur": "Dumbéa Ouest",
+          "standing": "Pavillonnaire",
+          "description": "Secteur intermédiaire le long de la RT1",
+          "latitude": -22.172,
+          "longitude": 166.452
+        }
+      ]
+    },
+    "MONT_DORE": {
+      "nom": "Mont-Dore",
+      "code_postal": 98809,
+      "code_insee": "98817",
+      "quartiers": [
+        {
+          "nom": "Pont-des-Français",
+          "secteur": "Mont-Dore Nord",
+          "standing": "Intermédiaire",
+          "description": "Entrée de commune, contigu à Nouméa",
+          "latitude": -22.227,
+          "longitude": 166.499
+        },
+        {
+          "nom": "Conception",
+          "secteur": "Mont-Dore Ouest",
+          "standing": "Intermédiaire / Historique",
+          "description": "Église de la Conception, secteur résidentiel",
+          "latitude": -22.235,
+          "longitude": 166.508
+        },
+        {
+          "nom": "Robinson",
+          "secteur": "Mont-Dore Ouest",
+          "standing": "Intermédiaire / Pavillonnaire",
+          "description": "Quartier résidentiel calme recherché",
+          "latitude": -22.247,
+          "longitude": 166.520
+        },
+        {
+          "nom": "Boulari",
+          "secteur": "Mont-Dore Centre",
+          "standing": "Intermédiaire",
+          "description": "Centre administratif, mairie, marina de Boulari, collège",
+          "latitude": -22.261,
+          "longitude": 166.535
+        },
+        {
+          "nom": "Saint-Michel",
+          "secteur": "Mont-Dore Sud",
+          "standing": "Pavillonnaire",
+          "description": "Secteur résidentiel le long du littoral",
+          "latitude": -22.278,
+          "longitude": 166.549
+        },
+        {
+          "nom": "Vallon-Dore",
+          "secteur": "Mont-Dore Sud",
+          "standing": "Pavillonnaire Littoral",
+          "description": "Zone côtière verdoyante face au Mont-Dore",
+          "latitude": -22.285,
+          "longitude": 166.582
+        },
+        {
+          "nom": "La Coulée",
+          "secteur": "Mont-Dore Est",
+          "standing": "Accessible / Vallée",
+          "description": "Vallée résidentielle et accès vers le Grand Sud",
+          "latitude": -22.242,
+          "longitude": 166.567
+        },
+        {
+          "nom": "Plum",
+          "secteur": "Mont-Dore Sud",
+          "standing": "Rural / Côtier",
+          "description": "Extrémité sud, source d'eau du Mont-Dore",
+          "latitude": -22.302,
+          "longitude": 166.634
+        }
+      ]
+    },
+    "PAITA": {
+      "nom": "Païta",
+      "code_postal": 98890,
+      "code_insee": "98821",
+      "quartiers": [
+        {
+          "nom": "Savannah",
+          "secteur": "Païta Sud",
+          "standing": "Haut de gamme",
+          "description": "Lotissement résidentiel privé très prisé (villas d'architecte, collines)",
+          "latitude": -22.158,
+          "longitude": 166.398
+        },
+        {
+          "nom": "Beauvallon",
+          "secteur": "Païta Sud",
+          "standing": "Intermédiaire / Pavillonnaire",
+          "description": "Zone résidentielle pavillonnaire moderne",
+          "latitude": -22.148,
+          "longitude": 166.388
+        },
+        {
+          "nom": "Val Boisé",
+          "secteur": "Païta Sud",
+          "standing": "Pavillonnaire",
+          "description": "Lotissement familial calme",
+          "latitude": -22.152,
+          "longitude": 166.412
+        },
+        {
+          "nom": "Païta Village / Centre",
+          "secteur": "Païta Centre",
+          "standing": "Intermédiaire / Accessible",
+          "description": "Cœur de commune, commerces, écoles, arènes de Païta",
+          "latitude": -22.131,
+          "longitude": 166.365
+        },
+        {
+          "nom": "Gadji",
+          "secteur": "Païta Côtier",
+          "standing": "Pavillonnaire / Maritime",
+          "description": "Littoral ouest, baies et nature",
+          "latitude": -22.179,
+          "longitude": 166.335
+        },
+        {
+          "nom": "Mont-Mou",
+          "secteur": "Païta Montagne",
+          "standing": "Rural / Verdoyant",
+          "description": "Propriétés sur grands terrains au pied de la montagne",
+          "latitude": -22.098,
+          "longitude": 166.350
+        }
+      ]
+    }
+  }
+}

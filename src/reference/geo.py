@@ -1,0 +1,114 @@
+import json
+import re
+import unicodedata
+from typing import Dict, List, Optional, Tuple, Any
+from pathlib import Path
+
+from src.config.settings import REFERENCE_DATA_DIR
+from src.models.listing import Commune
+
+
+def normalize_text(text: str) -> str:
+    """Supprime les accents, met en minuscules et nettoie la ponctuation."""
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFKD", text).encode("ASCII", "ignore").decode("utf-8")
+    text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
+    return " ".join(text.lower().split())
+
+
+class GeoReferential:
+    def __init__(self, json_path: Optional[Path] = None):
+        self.path = json_path or (REFERENCE_DATA_DIR / "referentiel_grand_noumea.json")
+        self.data = self._load()
+        self._build_index()
+
+    def _load(self) -> Dict[str, Any]:
+        with open(self.path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def _build_index(self):
+        """Indexe les communes et quartiers pour une détection rapide et sans faille."""
+        self.communes_map: Dict[str, Commune] = {
+            "noumea": Commune.NOUMEA,
+            "dumbea": Commune.DUMBEA,
+            "mont dore": Commune.MONT_DORE,
+            "le mont dore": Commune.MONT_DORE,
+            "paita": Commune.PAITA,
+        }
+
+        # Structure : { normalized_quartier_name: (official_name, commune_enum, quartier_dict) }
+        self.quartiers_index: Dict[str, Tuple[str, Commune, Dict[str, Any]]] = {}
+
+        # Alias fréquents dans les annonces locales
+        self.aliases: Dict[str, str] = {
+            "vdc": "vallee des colons",
+            "bdc": "baie des citrons",
+            "anse vata": "anse vata",
+            "val plaisance": "val plaisance",
+            "dsm": "dumbea sur mer",
+            "dumbea sur mer": "dumbea sur mer",
+            "tina sur mer": "tina",
+            "presquile de tina": "tina",
+            "pont des francais": "pont des francais",
+            "vallon dore": "vallon dore",
+            "la coulee": "la coulee",
+            "faubourg": "faubourg blanchot",
+            "motor pool": "motor pool",
+            "port plaisance": "port plaisance",
+            "val boise": "val boise",
+        }
+
+        for com_key, com_info in self.data.get("communes", {}).items():
+            commune_enum = Commune[com_key]
+            for q in com_info.get("quartiers", []):
+                official_name = q["nom"]
+                norm_q = normalize_text(official_name)
+                self.quartiers_index[norm_q] = (official_name, commune_enum, q)
+
+                # Variantes sans tiret / pluriel
+                norm_alt = norm_q.replace("des ", "").replace("les ", "").replace("sur ", "")
+                if norm_alt != norm_q:
+                    self.quartiers_index[norm_alt] = (official_name, commune_enum, q)
+
+    def find_location(self, text: str) -> Tuple[Commune, Optional[str], Optional[Dict[str, Any]]]:
+        """
+        Détecte la commune et le quartier depuis une chaîne de texte
+        (ex: titre, localisation déclarée ou description).
+        Retourne (Commune, nom_officiel_quartier, metadata_quartier).
+        """
+        if not text:
+            return Commune.AUTRE, None, None
+
+        norm = normalize_text(text)
+
+        # 1. Vérifier les alias spécifiques d'abord
+        for alias, target_q in self.aliases.items():
+            # Pattern avec frontières de mots
+            if re.search(rf"\b{re.escape(alias)}\b", norm):
+                if target_q in self.quartiers_index:
+                    official_name, commune_enum, q_info = self.quartiers_index[target_q]
+                    return commune_enum, official_name, q_info
+
+        # 2. Chercher les quartiers répertoriés (du plus long au plus court pour éviter les faux positifs)
+        sorted_quartiers = sorted(self.quartiers_index.keys(), key=len, reverse=True)
+        for q_key in sorted_quartiers:
+            if re.search(rf"\b{re.escape(q_key)}\b", norm):
+                official_name, commune_enum, q_info = self.quartiers_index[q_key]
+                return commune_enum, official_name, q_info
+
+        # 3. Si aucun quartier n'est identifié, chercher la commune
+        for com_key, com_enum in self.communes_map.items():
+            if re.search(rf"\b{re.escape(com_key)}\b", norm):
+                return com_enum, None, None
+
+        return Commune.AUTRE, None, None
+
+    def get_quartier_info(self, commune: Commune, quartier_nom: str) -> Optional[Dict[str, Any]]:
+        """Récupère les caractéristiques (standing, secteur, coordonnées) d'un quartier."""
+        com_key = commune.value
+        com_dict = self.data.get("communes", {}).get(com_key, {})
+        for q in com_dict.get("quartiers", []):
+            if q["nom"].lower() == quartier_nom.lower():
+                return q
+        return None

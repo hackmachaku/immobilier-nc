@@ -1,0 +1,234 @@
+import re
+from typing import Optional, Tuple
+from src.models.listing import RawListing, CleanedListing, TransactionType, PropertyType, Commune
+from src.reference.geo import GeoReferential
+
+
+class ListingCleaner:
+    def __init__(self, geo_ref: Optional[GeoReferential] = None):
+        self.geo_ref = geo_ref or GeoReferential()
+
+    def parse_price(self, raw_price: Optional[str], text_fallback: str = "") -> Optional[int]:
+        """
+        Extrait et normalise un prix en Francs Pacifique (XPF / F CFP).
+        Gère les formats courants en NC :
+        - '38 500 000 F' / '38.500.000 XPF'
+        - '38.5 MF' / '38,5 M' / '42 MF' (Millions de Francs)
+        - '125 000 F/mois'
+        """
+        candidate = raw_price or ""
+        if not candidate and text_fallback:
+            # Recherche d'un motif de prix dans le texte
+            m = re.search(r"(\d+[\d\s\.,]*)\s*(?:f\s*cfp|xpf|f(?:\.|\b)|millions?|mf)", text_fallback, re.IGNORECASE)
+            if m:
+                candidate = m.group(0)
+
+        if not candidate:
+            return None
+
+        clean = candidate.strip().lower()
+
+        # Format "XX,X MF" ou "XX M" (Millions de Francs Pacifique)
+        mf_match = re.search(r"(\d+(?:[,\.]\d+)?)\s*(?:mf|millions?)", clean)
+        if mf_match:
+            try:
+                val = float(mf_match.group(1).replace(",", "."))
+                return int(val * 1_000_000)
+            except ValueError:
+                pass
+
+        # Format standard numérique (ex: "38 500 000", "38.500.000")
+        digits_only = re.sub(r"[^\d]", "", clean)
+        if digits_only:
+            try:
+                val = int(digits_only)
+                # Filtre de cohérence pour éviter les numéros de téléphone ou codes postaux
+                if val >= 10_000:  # Minimum réaliste pour un loyer mensuel en F CFP
+                    return val
+            except ValueError:
+                pass
+
+        return None
+
+    def parse_surface(self, raw_surface: Optional[str], text_fallback: str = "") -> Tuple[Optional[float], Optional[float], Optional[float]]:
+        """
+        Extrait :
+        1. Surface habitable (m²)
+        2. Surface terrain (m²) - gère les 'ares' calédoniens (1 are = 100 m²)
+        3. Surface terrasse / varangue (m²)
+        """
+        surface_hab: Optional[float] = None
+        surface_terrain: Optional[float] = None
+        surface_terrasse: Optional[float] = None
+
+        blob = f"{raw_surface or ''} {text_fallback}".lower()
+
+        # 1. Surface Habitable
+        hab_match = re.search(r"(\d+(?:[,\.]\d+)?)\s*(?:m²|m2|metres\s*carres?)\s*(?:hab(?:itables?)?|int(?:erieurs?)?)?", blob)
+        if raw_surface:
+            # Si un champ surface dédié est fourni
+            num_match = re.search(r"(\d+(?:[,\.]\d+)?)", raw_surface)
+            if num_match:
+                try:
+                    surface_hab = float(num_match.group(1).replace(",", "."))
+                except ValueError:
+                    pass
+        elif hab_match:
+            try:
+                surface_hab = float(hab_match.group(1).replace(",", "."))
+            except ValueError:
+                pass
+
+        # 2. Surface Terrain (ex: "terrain de 12 ares", "terrain 850 m²", "parcelle de 6 ares 50")
+        # En NC, les surfaces de terrain sont très souvent exprimées en ares
+        ares_match = re.search(r"(\d+(?:[,\.]\d+)?)\s*ares?(?:\s*(\d+))?", blob)
+        if ares_match:
+            try:
+                ares_val = float(ares_match.group(1).replace(",", "."))
+                centiares = float(ares_match.group(2)) if ares_match.group(2) else 0.0
+                surface_terrain = (ares_val * 100.0) + centiares
+            except ValueError:
+                pass
+        else:
+            terrain_match = re.search(r"terrain\s*(?:de)?\s*(\d+(?:[\s\.,]\d+)?)\s*(?:m²|m2)", blob)
+            if terrain_match:
+                try:
+                    cleaned_t = re.sub(r"[^\d]", "", terrain_match.group(1))
+                    surface_terrain = float(cleaned_t)
+                except ValueError:
+                    pass
+
+        # 3. Surface Terrasse / Varangue / Deck (terme local calédonien)
+        terrasse_match = re.search(r"(?:terrasse|varangue|deck)\s*(?:couverte)?\s*(?:de)?\s*(\d+(?:[,\.]\d+)?)\s*(?:m²|m2)", blob)
+        if terrasse_match:
+            try:
+                surface_terrasse = float(terrasse_match.group(1).replace(",", "."))
+            except ValueError:
+                pass
+
+        if surface_hab is not None and surface_hab < 0:
+            surface_hab = None
+        if surface_terrain is not None and surface_terrain < 0:
+            surface_terrain = None
+        if surface_terrasse is not None and surface_terrasse < 0:
+            surface_terrasse = None
+
+        return surface_hab, surface_terrain, surface_terrasse
+
+    def parse_rooms(self, raw_rooms: Optional[str], text_fallback: str = "") -> Tuple[Optional[int], Optional[int]]:
+        """
+        Extrait le nombre de pièces totales et de chambres (ex: F3 -> 3 pièces, 2 chambres).
+        """
+        rooms: Optional[int] = None
+        bedrooms: Optional[int] = None
+
+        blob = f"{raw_rooms or ''} {text_fallback}".lower()
+
+        # Détection type F1, F2, F3, F4, F5, F6, T2, T3...
+        f_match = re.search(r"\b[ft](\d+)\b", blob)
+        if f_match:
+            try:
+                rooms = int(f_match.group(1))
+                if rooms > 1:
+                    bedrooms = rooms - 1
+            except ValueError:
+                pass
+
+        # Détection explicite "X chambres"
+        chambres_match = re.search(r"(\d+)\s*chambre", blob)
+        if chambres_match:
+            try:
+                bedrooms = int(chambres_match.group(1))
+                if rooms is None:
+                    rooms = bedrooms + 1
+            except ValueError:
+                pass
+
+        return rooms, bedrooms
+
+    def detect_property_type(self, declared: Optional[str], title: str, description: str) -> PropertyType:
+        """Identifie le type de bien immobilier."""
+        blob = f"{declared or ''} {title} {description}".lower()
+
+        if re.search(r"\b(villa|maison|propriete|dock\s*habitable)\b", blob):
+            return PropertyType.MAISON_VILLA
+        if re.search(r"\b(appartement|studio|duplex|triplex|attique|loft)\b", blob):
+            return PropertyType.APPARTEMENT
+        if re.search(r"\b(terrain|parcelle|lotissement)\b", blob):
+            return PropertyType.TERRAIN
+        if re.search(r"\b(immeuble|murs|batiment)\b", blob):
+            return PropertyType.IMMEUBLE
+        if re.search(r"\b(dock|entrepot|hangar)\b", blob):
+            return PropertyType.DOCK
+        if re.search(r"\b(local|bureau|commerce|boutique)\b", blob):
+            return PropertyType.LOCAL_COMMERCIAL
+
+        return PropertyType.AUTRE
+
+    def detect_transaction_type(self, declared: Optional[str], title: str, description: str, price: Optional[int]) -> TransactionType:
+        """Détermine s'il s'agit d'une vente ou d'une location."""
+        dec_lower = (declared or "").strip().lower()
+        if "locat" in dec_lower or "louer" in dec_lower:
+            return TransactionType.LOCATION
+
+        blob = f"{title} {description}".lower()
+        has_loc = bool(re.search(r"\b(louer|location|loyer|mensuel|charges comprises|f/mois|par mois)\b", blob))
+        has_vente = bool(re.search(r"\b(vente|vendre|acheter|achat|acquerir|prix fai)\b", blob))
+
+        if has_loc and not has_vente:
+            return TransactionType.LOCATION
+        if has_vente and not has_loc:
+            return TransactionType.VENTE
+        if has_loc:
+            return TransactionType.LOCATION
+
+        # Règle heuristique par le prix si indéterminé
+        if price is not None:
+            if price < 1_500_000:  # En XPF, sous 1.5M F CFP c'est quasiment toujours un loyer mensuel
+                return TransactionType.LOCATION
+            return TransactionType.VENTE
+
+        return TransactionType.VENTE
+
+    def clean(self, raw: RawListing) -> Optional[CleanedListing]:
+        """Transforme une RawListing en CleanedListing validée et exploitable."""
+        price = self.parse_price(raw.raw_price, f"{raw.title} {raw.description}")
+        if price is None:
+            # Une annonce sans prix exploitable est ignorée pour les calculs d'estimation
+            return None
+
+        surface_hab, surface_terrain, surface_terrasse = self.parse_surface(
+            raw.raw_surface, f"{raw.title} {raw.description}"
+        )
+
+        rooms, bedrooms = self.parse_rooms(raw.raw_rooms, f"{raw.title} {raw.description}")
+
+        prop_type = self.detect_property_type(raw.property_type_declared, raw.title, raw.description or "")
+        trans_type = self.detect_transaction_type(raw.transaction_type_declared, raw.title, raw.description or "", price)
+
+        # Localisation
+        commune, quartier, _ = self.geo_ref.find_location(f"{raw.raw_location or ''} {raw.title} {raw.description or ''}")
+
+        unique_id = f"{raw.source.lower()}_{raw.source_id}"
+
+        return CleanedListing(
+            id=unique_id,
+            source=raw.source,
+            source_id=raw.source_id,
+            url=raw.url,
+            title=raw.title.strip(),
+            description=raw.description.strip() if raw.description else "",
+            transaction_type=trans_type,
+            property_type=prop_type,
+            commune=commune,
+            quartier=quartier,
+            price_xpf=price,
+            surface_habitable_m2=surface_hab,
+            surface_terrain_m2=surface_terrain,
+            surface_terrasse_m2=surface_terrasse,
+            rooms=rooms,
+            bedrooms=bedrooms,
+            agency_name=raw.agency_name,
+            image_url=raw.image_url,
+            is_active=True,
+        )
