@@ -24,3 +24,4 @@ data/raw/*.jsonl
 .idea/
 .DS_Store
 Thumbs.db
+wiki_content/
