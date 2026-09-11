@@ -61,6 +61,9 @@
     .leaflet-container {
       font-family: inherit !important;
     }
+    #detailModal, #manualModal, #addSourceModal {
+      z-index: 99999 !important;
+    }
   </style>
 </head>
 <body class="min-h-screen p-3 md:p-6 lg:p-8">
@@ -1055,8 +1058,8 @@
   <!-- ===================================================================== -->
   <!-- MODALE DE DÉTAIL & DIAGNOSTIC IA (EXACTEMENT COMME LA CAPTURE)       -->
   <!-- ===================================================================== -->
-  <div id="detailModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-3 sm:p-4">
-    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto custom-scrollbar shadow-2xl relative">
+  <div id="detailModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[99999] hidden flex items-center justify-center p-3 sm:p-4" style="z-index: 99999;">
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto custom-scrollbar shadow-2xl relative" style="z-index: 100000;">
       <button onclick="closeDetailModal()" class="absolute top-4 right-4 z-20 w-9 h-9 rounded-full bg-slate-900/80 text-white flex items-center justify-center hover:bg-slate-800 transition-all text-sm font-bold border border-slate-700">
         ✕
       </button>
@@ -1067,7 +1070,7 @@
   <!-- ===================================================================== -->
   <!-- MODAL: AJOUT MANUEL D'ANNONCE (BOUTON VIOLET DU HEADER)              -->
   <!-- ===================================================================== -->
-  <div id="manualModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+  <div id="manualModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[99999] hidden flex items-center justify-center p-4" style="z-index: 99999;">
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl p-6 relative">
       <button onclick="closeManualModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white">✕</button>
 
@@ -1164,7 +1167,7 @@
   <!-- ===================================================================== -->
   <!-- MODAL: AJOUTER UNE SOURCE DE VEILLE                                  -->
   <!-- ===================================================================== -->
-  <div id="addSourceModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+  <div id="addSourceModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[99999] hidden flex items-center justify-center p-4" style="z-index: 99999;">
     <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl max-w-md w-full p-6 relative shadow-2xl">
       <button onclick="closeAddSourceModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white">✕</button>
       
@@ -2257,6 +2260,9 @@
     }
 
     function openDetailModal(id) {
+      if (leafletMapInstance) {
+        leafletMapInstance.closePopup();
+      }
       const item = listingsData.find(x => x.id === id);
       if (!item) return;
 
