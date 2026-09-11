@@ -52,10 +52,12 @@ class PropertyDatabase:
                 standing_estime VARCHAR,
                 agency_name VARCHAR,
                 image_url VARCHAR,
+                images_json VARCHAR,
                 published_at TIMESTAMP,
                 scraped_at TIMESTAMP,
                 is_active BOOLEAN
             );
+            ALTER TABLE listings ADD COLUMN IF NOT EXISTS images_json VARCHAR;
             """)
 
             # Vues analytiques
@@ -134,6 +136,7 @@ class PropertyDatabase:
                 "standing_estime": l.standing_estime,
                 "agency_name": l.agency_name,
                 "image_url": getattr(l, "image_url", None),
+                "images_json": getattr(l, "images_json", None),
                 "published_at": l.published_at,
                 "scraped_at": l.scraped_at,
                 "is_active": l.is_active,
@@ -162,6 +165,7 @@ class PropertyDatabase:
                 has_air_conditioning = EXCLUDED.has_air_conditioning,
                 is_secured = EXCLUDED.is_secured,
                 image_url = COALESCE(EXCLUDED.image_url, listings.image_url),
+                images_json = COALESCE(EXCLUDED.images_json, listings.images_json),
                 scraped_at = EXCLUDED.scraped_at,
                 is_active = EXCLUDED.is_active;
             """)

@@ -248,6 +248,16 @@
             <option value="Païta">Païta</option>
           </select>
 
+          <!-- FILTRE TYPOLOGIE (F1, F2, F3, F4, F5+) -->
+          <select id="roomTypeFilter" onchange="filterListings()" class="px-3 py-1.5 rounded-lg bg-amber-950/40 border border-amber-500/40 text-xs text-amber-200 font-semibold focus:outline-none focus:ring-1 focus:ring-amber-400">
+            <option value="all">🛋️ Toutes typologies</option>
+            <option value="1">Studio / F1 (1 pièce)</option>
+            <option value="2">F2 (2 pièces / 1 ch.)</option>
+            <option value="3">F3 (3 pièces / 2 ch.)</option>
+            <option value="4">F4 (4 pièces / 3 ch.)</option>
+            <option value="5+">F5 et + (5 pièces ou +)</option>
+          </select>
+
           <select id="opportunityFilter" onchange="filterListings()" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-[var(--border)] text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500">
             <option value="all">Tous les statuts</option>
             <option value="new">Nouveaux (48h)</option>
@@ -940,20 +950,46 @@
     <!-- SECTION 5 : CARTE INTERACTIVE DU GRAND NOUMÉA                         -->
     <!-- ===================================================================== -->
     <section id="tabContentCarte" class="hidden space-y-4">
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-2xl bg-[var(--card)] border border-[var(--border)]">
-        <div>
-          <h2 class="text-base font-bold text-white">🗺️ Exploration Géographique du Grand Nouméa</h2>
-          <p class="text-xs text-slate-400">Cliquez sur un quartier pour voir son prix moyen au m², son profil et ses caractéristiques.</p>
+      <!-- HEADER ET FILTRES CARTE -->
+      <div class="p-4 rounded-2xl bg-[var(--card)] border border-[var(--border)] space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h2 class="text-base font-bold text-white flex items-center gap-2">
+              <span>🗺️ Carte Interactive des Prix & Annonces du Grand Nouméa</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">
+              Visualisez l'ensemble des biens immobiliers répertoriés (Ventes & Locations) et analysez leur positionnement prix.
+            </p>
+          </div>
+
+          <!-- Boutons de filtre Carte -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="setMapFilterMode('all')" id="btnMapModeAll" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-500 text-white shadow transition-all flex items-center gap-1.5">
+              <span>📍 Toutes les annonces</span>
+              <span id="mapBadgeAll" class="px-1.5 py-0.5 rounded-full bg-sky-600/80 text-[10px]">0</span>
+            </button>
+            <button onclick="setMapFilterMode('vente')" id="btnMapModeVente" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-all flex items-center gap-1.5">
+              <span>🏡 Ventes</span>
+              <span id="mapBadgeVente" class="px-1.5 py-0.5 rounded-full bg-slate-700 text-[10px]">0</span>
+            </button>
+            <button onclick="setMapFilterMode('location')" id="btnMapModeLoc" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-all flex items-center gap-1.5">
+              <span>🔑 Locations</span>
+              <span id="mapBadgeLoc" class="px-1.5 py-0.5 rounded-full bg-slate-700 text-[10px]">0</span>
+            </button>
+            <button onclick="toggleMapQuartiers()" id="btnMapQuartiers" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-all flex items-center gap-1.5 border border-slate-700">
+              <span id="mapQuartiersIcon">🏙️</span>
+              <span>Repères Quartiers</span>
+            </button>
+          </div>
         </div>
-        <div class="flex items-center gap-2 text-xs">
-          <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> Premium (&gt;500k)</span>
-          <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-orange-500 inline-block"></span> 400-500k</span>
-          <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-blue-500 inline-block"></span> 300-400k</span>
-          <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span> &lt;300k F</span>
+
+        <!-- LEGENDE DYNAMIQUE -->
+        <div id="mapLegendContainer" class="pt-3 border-t border-[var(--border)] flex flex-wrap items-center justify-between gap-3 text-xs">
+          <!-- Injecté dynamiquement par updateMapLegend() -->
         </div>
       </div>
 
-      <div id="mapContainer" class="w-full h-[620px] rounded-2xl overflow-hidden border border-[var(--border)] relative shadow-2xl">
+      <div id="mapContainer" class="w-full h-[640px] rounded-2xl overflow-hidden border border-[var(--border)] relative shadow-2xl">
         <!-- Leaflet Map Mount Point -->
       </div>
     </section>
@@ -1188,6 +1224,10 @@
     // =========================================================================
     let currentTab = 'veille';
     let leafletMapInstance = null;
+    let mapMarkersGroup = null;
+    let mapQuartiersGroup = null;
+    let currentMapMode = 'all';
+    let showMapQuartiers = false;
 
     function toggleView(view) {
       if (view === 'sources') {
@@ -1506,6 +1546,9 @@
             listingsData = jsonListings.data;
             populateAgencyFilterOptions();
             filterListings();
+            if (leafletMapInstance) {
+              renderMapMarkers();
+            }
             console.log(`[Sentinelle] ${listingsData.length} annonces réelles chargées.`);
           }
         }
@@ -1871,6 +1914,7 @@
       const search = normStr(document.getElementById('searchInput')?.value);
       const transaction = document.getElementById('transactionFilter')?.value || 'all';
       const commune = normStr(document.getElementById('communeFilter')?.value);
+      const roomType = document.getElementById('roomTypeFilter')?.value || 'all';
       const agency = normStr(document.getElementById('agencyFilter')?.value);
       const opportunity = document.getElementById('opportunityFilter')?.value || 'all';
       const sort = document.getElementById('sortFilter')?.value || 'date_desc';
@@ -1884,6 +1928,15 @@
         
         const itemAgency = normStr(item.agencyName);
         const matchesAgency = !agency || agency === 'all' || itemAgency.includes(agency) || agency.includes(itemAgency);
+
+        let matchesRoomType = true;
+        if (roomType !== 'all') {
+          if (roomType === '5+') {
+            matchesRoomType = item.roomTypeCode === '5+' || (item.rooms && item.rooms >= 5);
+          } else {
+            matchesRoomType = item.roomTypeCode === roomType || (item.rooms && item.rooms.toString() === roomType);
+          }
+        }
 
         let matchesOpp = true;
         if (opportunity === 'new') matchesOpp = item.status === 'new';
@@ -1899,7 +1952,7 @@
           normStr(item.description).includes(search) ||
           (item.agencyPhone && item.agencyPhone.includes(search));
 
-        return matchesCategory && matchesCommune && matchesTransaction && matchesAgency && matchesOpp && matchesSearch;
+        return matchesCategory && matchesCommune && matchesTransaction && matchesAgency && matchesRoomType && matchesOpp && matchesSearch;
       });
 
       filtered.sort((a, b) => {
@@ -1978,6 +2031,10 @@
           ? "bg-emerald-950/80 text-emerald-300 border-emerald-500/30"
           : (item.daysOnMarket > 45 ? "bg-amber-950/80 text-amber-300 border-amber-500/30" : "bg-slate-900/80 text-slate-300 border-slate-700");
 
+        const roomBadge = item.roomType 
+          ? `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 shadow-sm">🛋️ ${item.roomType}</span>`
+          : '';
+
         let aiVerdictCard = '';
         if (item.marketVerdict === 'A_NEGOCIER') {
           aiVerdictCard = `
@@ -2013,6 +2070,7 @@
               <div class="absolute top-3 left-3 flex gap-2 flex-wrap">
                 ${transBadge}
                 ${categoryTag}
+                ${roomBadge}
                 <span class="px-2 py-0.5 rounded text-[10px] font-semibold border ${ageColor} flex items-center gap-1">
                   ⏱️ ${item.daysOnMarket}j en ligne
                 </span>
@@ -2125,11 +2183,99 @@
     }
 
     // =========================================================================
-    // MODALE DE DÉTAIL AVEC DIAGNOSTIC IA
+    // MODALE DE DÉTAIL AVEC CARROUSEL DÉFILANT & DIAGNOSTIC IA
     // =========================================================================
+    let currentModalImages = [];
+    let currentModalPhotoIdx = 0;
+    let modalCarouselTimer = null;
+
+    function updateModalPhotoView() {
+      const imgElem = document.getElementById('modalCarouselImage');
+      const idxElem = document.getElementById('modalPhotoIndex');
+      if (!currentModalImages || currentModalImages.length === 0) return;
+      const total = currentModalImages.length;
+      const idx = currentModalPhotoIdx % total;
+
+      if (imgElem) {
+        imgElem.style.opacity = '0.3';
+        setTimeout(() => {
+          imgElem.src = currentModalImages[idx];
+          imgElem.style.opacity = '1';
+        }, 150);
+      }
+      if (idxElem) {
+        idxElem.textContent = (idx + 1).toString();
+      }
+
+      const dotsContainer = document.getElementById('modalCarouselDots');
+      if (dotsContainer) {
+        const dots = dotsContainer.querySelectorAll('button[data-dot-idx]');
+        dots.forEach((dot, dIdx) => {
+          if (dIdx === idx) {
+            dot.className = 'w-6 h-2 rounded-full bg-sky-400 transition-all shadow-sm shadow-sky-400/50';
+          } else {
+            dot.className = 'w-2 h-2 rounded-full bg-white/40 hover:bg-white transition-all';
+          }
+        });
+      }
+    }
+
+    function nextModalPhoto(event) {
+      if (event) event.stopPropagation();
+      if (!currentModalImages || currentModalImages.length <= 1) return;
+      currentModalPhotoIdx = (currentModalPhotoIdx + 1) % currentModalImages.length;
+      updateModalPhotoView();
+    }
+
+    function prevModalPhoto(event) {
+      if (event) event.stopPropagation();
+      if (!currentModalImages || currentModalImages.length <= 1) return;
+      currentModalPhotoIdx = (currentModalPhotoIdx - 1 + currentModalImages.length) % currentModalImages.length;
+      updateModalPhotoView();
+    }
+
+    function setModalPhoto(index, event) {
+      if (event) event.stopPropagation();
+      if (!currentModalImages || currentModalImages.length <= index) return;
+      currentModalPhotoIdx = index;
+      updateModalPhotoView();
+    }
+
+    function pauseModalCarousel() {
+      if (modalCarouselTimer) {
+        clearInterval(modalCarouselTimer);
+        modalCarouselTimer = null;
+      }
+    }
+
+    function resumeModalCarousel() {
+      if (currentModalImages && currentModalImages.length > 1) {
+        if (!modalCarouselTimer) {
+          modalCarouselTimer = setInterval(nextModalPhoto, 3500);
+        }
+      }
+    }
+
     function openDetailModal(id) {
       const item = listingsData.find(x => x.id === id);
       if (!item) return;
+
+      pauseModalCarousel();
+
+      // Extraction multi-photos pour carrousel défilant
+      let photos = [];
+      if (item.images && Array.isArray(item.images) && item.images.length > 0) {
+        photos = item.images.filter(u => typeof u === 'string' && u.trim().startsWith('http'));
+      }
+      if (photos.length === 0 && item.image) {
+        photos = [item.image];
+      }
+      if (photos.length === 0) {
+        photos = ["https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=800&q=80"];
+      }
+
+      currentModalImages = photos;
+      currentModalPhotoIdx = 0;
 
       const isLoc = Boolean(item.isLocation || item.transactionType === 'LOCATION');
       const modal = document.getElementById('detailModal');
@@ -2142,20 +2288,48 @@
         : `<span class="px-3 py-1 rounded-lg text-xs font-bold bg-emerald-600 text-white shadow-md">🏡 Vente</span>`;
 
       content.innerHTML = `
-        <!-- HEADER IMAGE & OVERLAY -->
-        <div class="relative h-64 sm:h-80 w-full overflow-hidden">
-          <img src="${item.image}" alt="${item.title}" class="w-full h-full object-cover">
-          <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-black/20"></div>
-          
-          <div class="absolute bottom-5 left-6 right-6">
+        <!-- HEADER IMAGE & OVERLAY AVEC CARROUSEL DÉFILANT -->
+        <div class="relative h-72 sm:h-96 w-full overflow-hidden select-none group" id="modalCarouselContainer" onmouseenter="pauseModalCarousel()" onmouseleave="resumeModalCarousel()">
+          <img id="modalCarouselImage" src="${photos[0]}" alt="${item.title}" class="w-full h-full object-cover transition-opacity duration-300">
+          <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-black/20 pointer-events-none"></div>
+
+          ${photos.length > 1 ? `
+            <!-- BADGE COMPTEUR PHOTOS -->
+            <div id="modalPhotoBadge" class="absolute top-4 left-4 z-20 px-3 py-1 rounded-full bg-slate-900/80 backdrop-blur-md text-xs font-bold text-white border border-slate-700/80 flex items-center gap-1.5 shadow-lg">
+              <span>📸</span>
+              <span><span id="modalPhotoIndex">1</span> / ${photos.length} photos</span>
+            </div>
+
+            <!-- BOUTONS PRÉCÉDENT / SUIVANT -->
+            <button onclick="prevModalPhoto(event)" title="Photo précédente (Flèche gauche)" class="absolute left-3 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-slate-950/70 hover:bg-slate-900 text-white flex items-center justify-center backdrop-blur-md border border-slate-700/80 transition-all opacity-80 hover:opacity-100 shadow-xl focus:outline-none">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+            </button>
+            <button onclick="nextModalPhoto(event)" title="Photo suivante (Flèche droite)" class="absolute right-3 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-slate-950/70 hover:bg-slate-900 text-white flex items-center justify-center backdrop-blur-md border border-slate-700/80 transition-all opacity-80 hover:opacity-100 shadow-xl focus:outline-none">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+            </button>
+
+            <!-- DOTS INDICATEURS AU BAS DU HEADER -->
+            <div id="modalCarouselDots" class="absolute bottom-24 sm:bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950/60 backdrop-blur-md border border-slate-800/80 max-w-[85%] overflow-x-auto custom-scrollbar">
+              ${photos.map((_, i) => `
+                <button onclick="setModalPhoto(${i}, event)" class="rounded-full transition-all ${i === 0 ? 'w-6 h-2 bg-sky-400 shadow-sm shadow-sky-400/50' : 'w-2 h-2 bg-white/40 hover:bg-white'}" data-dot-idx="${i}"></button>
+              `).join('')}
+            </div>
+          ` : ''}
+
+          <div class="absolute bottom-5 left-6 right-6 z-10 pointer-events-auto">
             <div class="flex items-center gap-2 mb-2 flex-wrap">
               ${transBadge}
               <span class="px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-white shadow-md">
                 ${item.categoryLabel}
               </span>
+              ${item.roomType ? `
+                <span class="px-3 py-1 rounded-lg text-xs font-bold bg-amber-500 text-slate-950 shadow-md flex items-center gap-1">
+                  🛋️ ${item.roomType}${item.bedrooms ? ` (${item.bedrooms} ch.)` : ''}
+                </span>
+              ` : ''}
             </div>
-            <h2 class="text-xl sm:text-2xl font-black text-white leading-tight">${item.title}</h2>
-            <p class="text-xs sm:text-sm text-slate-300 mt-1 flex items-center gap-2 flex-wrap">
+            <h2 class="text-xl sm:text-2xl font-black text-white leading-tight drop-shadow-md">${item.title}</h2>
+            <p class="text-xs sm:text-sm text-slate-300 mt-1 flex items-center gap-2 flex-wrap drop-shadow-sm">
               <span>📍 ${item.commune} (${item.quartier})</span>
               <span>•</span>
               <span>Source :</span>
@@ -2312,11 +2486,29 @@
       `;
 
       modal.classList.remove('hidden');
+
+      // Démarrer le défilement automatique si plusieurs photos disponibles (toutes les 3.5s)
+      if (photos.length > 1) {
+        modalCarouselTimer = setInterval(nextModalPhoto, 3500);
+      }
     }
 
     function closeDetailModal() {
-      document.getElementById('detailModal').classList.add('hidden');
+      pauseModalCarousel();
+      currentModalImages = [];
+      currentModalPhotoIdx = 0;
+      const modal = document.getElementById('detailModal');
+      if (modal) modal.classList.add('hidden');
     }
+
+    // Raccourcis clavier pour naviguer dans le carrousel (Flèches gauche/droite et Échap)
+    document.addEventListener('keydown', function(e) {
+      const modal = document.getElementById('detailModal');
+      if (!modal || modal.classList.contains('hidden')) return;
+      if (e.key === 'ArrowRight') nextModalPhoto();
+      if (e.key === 'ArrowLeft') prevModalPhoto();
+      if (e.key === 'Escape') closeDetailModal();
+    });
 
     window.addEventListener('click', function(event) {
       const modal = document.getElementById('detailModal');
@@ -2565,51 +2757,252 @@
     }
 
     // =========================================================================
-    // CARTE LEAFLET DU GRAND NOUMÉA
+    // CARTE LEAFLET DYNAMIQUE DU GRAND NOUMÉA (ANNONCES & PRIX)
     // =========================================================================
+    function setMapFilterMode(mode) {
+      currentMapMode = mode;
+      const modes = ['all', 'vente', 'location'];
+      modes.forEach(m => {
+        const btnId = m === 'all' ? 'btnMapModeAll' : (m === 'vente' ? 'btnMapModeVente' : 'btnMapModeLoc');
+        const btn = document.getElementById(btnId);
+        if (btn) {
+          if (m === mode) {
+            btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-500 text-white shadow transition-all flex items-center gap-1.5";
+          } else {
+            btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-all flex items-center gap-1.5";
+          }
+        }
+      });
+      renderMapMarkers();
+    }
+
+    function toggleMapQuartiers() {
+      showMapQuartiers = !showMapQuartiers;
+      const btn = document.getElementById('btnMapQuartiers');
+      if (btn) {
+        if (showMapQuartiers) {
+          btn.classList.add('bg-indigo-600', 'text-white', 'border-indigo-500');
+          btn.classList.remove('bg-slate-800', 'text-slate-300');
+        } else {
+          btn.classList.remove('bg-indigo-600', 'text-white', 'border-indigo-500');
+          btn.classList.add('bg-slate-800', 'text-slate-300');
+        }
+      }
+      renderMapMarkers();
+    }
+
+    function getListingPriceColor(item) {
+      const isLoc = Boolean(item.isLocation || item.transactionType === 'LOCATION');
+      const price = item.currentPrice || 0;
+      const pM2 = item.priceM2 || 0;
+
+      if (isLoc) {
+        // Barème Loyers mensuels NC
+        if (price >= 250000) return { color: '#ef4444', label: 'Loyer Élite (>250k F)' };
+        if (price >= 180000) return { color: '#f97316', label: 'Loyer Confort (180k-250k F)' };
+        if (price >= 110000) return { color: '#0ea5e9', label: 'Loyer Marché (110k-180k F)' };
+        return { color: '#10b981', label: 'Loyer Économique (<110k F)' };
+      } else {
+        // Ventes : barème prix au m² NC ou prix global
+        if (pM2 > 0) {
+          if (pM2 >= 450000) return { color: '#ef4444', label: 'Vente Prestige (>450k F/m²)' };
+          if (pM2 >= 350000) return { color: '#f97316', label: 'Vente Haut de Gamme (350k-450k F/m²)' };
+          if (pM2 >= 250000) return { color: '#0ea5e9', label: 'Vente Marché (250k-350k F/m²)' };
+          return { color: '#10b981', label: 'Vente Accessible (<250k F/m²)' };
+        } else {
+          if (price >= 60000000) return { color: '#ef4444', label: 'Vente Prestige (>60 MF)' };
+          if (price >= 35000000) return { color: '#f97316', label: 'Vente Haut de Gamme (35-60 MF)' };
+          if (price >= 20000000) return { color: '#0ea5e9', label: 'Vente Marché (20-35 MF)' };
+          return { color: '#10b981', label: 'Vente Accessible (<20 MF)' };
+        }
+      }
+    }
+
+    function updateMapLegend() {
+      const container = document.getElementById('mapLegendContainer');
+      if (!container) return;
+
+      if (currentMapMode === 'location') {
+        container.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-slate-300">🔑 Échelle Loyers Mensuels :</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-red-500 inline-block shadow-sm"></span> <span class="text-slate-300">Élite (&gt;250k F/mois)</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-orange-500 inline-block shadow-sm"></span> <span class="text-slate-300">Confort (180k - 250k F)</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-sky-500 inline-block shadow-sm"></span> <span class="text-slate-300">Moyen (110k - 180k F)</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block shadow-sm"></span> <span class="text-slate-300">Économique (&lt;110k F)</span></span>
+          </div>
+        `;
+      } else if (currentMapMode === 'vente') {
+        container.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-slate-300">🏡 Échelle Prix de Vente :</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-red-500 inline-block shadow-sm"></span> <span class="text-slate-300">Prestige (&gt;450k F/m² ou &gt;60 MF)</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-orange-500 inline-block shadow-sm"></span> <span class="text-slate-300">Haut de Gamme (350k - 450k F/m²)</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-sky-500 inline-block shadow-sm"></span> <span class="text-slate-300">Marché Normal (250k - 350k F/m²)</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block shadow-sm"></span> <span class="text-slate-300">Accessible (&lt;250k F/m² ou &lt;20 MF)</span></span>
+          </div>
+        `;
+      } else {
+        container.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-slate-300">🎨 Niveaux de Prix Relatifs :</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-red-500 inline-block shadow-sm"></span> <span class="text-slate-300">Segment Haut / Prestige</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-orange-500 inline-block shadow-sm"></span> <span class="text-slate-300">Segment Supérieur</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-sky-500 inline-block shadow-sm"></span> <span class="text-slate-300">Segment Médian</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block shadow-sm"></span> <span class="text-slate-300">Segment Accessible</span></span>
+            <span class="flex items-center gap-1.5 border-l border-slate-700 pl-3"><span class="w-3 h-3 rounded-full bg-indigo-500 inline-block border border-dashed border-white"></span> <span class="text-indigo-300">Repères Quartiers</span></span>
+          </div>
+        `;
+      }
+    }
+
     function initLeafletMap() {
       if (leafletMapInstance) {
         leafletMapInstance.invalidateSize();
+        renderMapMarkers();
         return;
       }
 
-      leafletMapInstance = L.map('mapContainer').setView([-22.24, 166.47], 11);
+      leafletMapInstance = L.map('mapContainer').setView([-22.255, 166.465], 12);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap'
+        attribution: '&copy; OpenStreetMap contributors'
       }).addTo(leafletMapInstance);
 
-      Object.keys(quartiersData).forEach(communeKey => {
-        quartiersData[communeKey].forEach(q => {
-          const prixMoyen = Math.round((q.prixM2Appt + q.prixM2Villa) / 2);
-          
-          let markerColor = '#10b981';
-          if (prixMoyen >= 500000) markerColor = '#ef4444';
-          else if (prixMoyen >= 400000) markerColor = '#f97316';
-          else if (prixMoyen >= 300000) markerColor = '#0ea5e9';
+      mapMarkersGroup = L.layerGroup().addTo(leafletMapInstance);
+      mapQuartiersGroup = L.layerGroup().addTo(leafletMapInstance);
 
-          const circle = L.circleMarker([q.lat, q.lon], {
-            radius: prixMoyen >= 450000 ? 10 : 7,
-            fillColor: markerColor,
-            color: '#ffffff',
-            weight: 1.5,
-            opacity: 1,
-            fillOpacity: 0.85
-          }).addTo(leafletMapInstance);
+      renderMapMarkers();
+    }
 
-          const popupContent = `
-            <div style="font-family: inherit; width: 220px; font-size: 12px; line-height: 1.4;">
-              <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: bold; color: ${markerColor};">${q.nom}</h4>
-              <span style="font-size: 10px; color: #94a3b8; display: block; margin-bottom: 6px;">${communeKey} • ${q.standing}</span>
-              <p style="margin: 0 0 6px 0; color: #cbd5e1; font-style: italic;">${q.desc}</p>
-              <hr style="border: none; border-top: 1px solid #334155; margin: 4px 0;" />
-              <b>Prix au m² moyen :</b> <span style="color: #38bdf8; font-weight: bold;">${prixMoyen.toLocaleString('fr-FR')} F/m²</span><br/>
-              <b>Équivalent :</b> ${Math.round(prixMoyen/119.33).toLocaleString('fr-FR')} €/m²
+    function renderMapMarkers() {
+      if (!leafletMapInstance || !mapMarkersGroup) return;
+
+      mapMarkersGroup.clearLayers();
+      mapQuartiersGroup.clearLayers();
+
+      const allItems = listingsData || [];
+      const totalCount = allItems.length;
+      const ventesCount = allItems.filter(x => !x.isLocation && x.transactionType !== 'LOCATION').length;
+      const locCount = allItems.filter(x => x.isLocation || x.transactionType === 'LOCATION').length;
+
+      const bAll = document.getElementById('mapBadgeAll');
+      const bVente = document.getElementById('mapBadgeVente');
+      const bLoc = document.getElementById('mapBadgeLoc');
+      if (bAll) bAll.textContent = totalCount;
+      if (bVente) bVente.textContent = ventesCount;
+      if (bLoc) bLoc.textContent = locCount;
+
+      let filtered = allItems;
+      if (currentMapMode === 'vente') {
+        filtered = allItems.filter(x => !x.isLocation && x.transactionType !== 'LOCATION');
+      } else if (currentMapMode === 'location') {
+        filtered = allItems.filter(x => x.isLocation || x.transactionType === 'LOCATION');
+      }
+
+      const withCoords = filtered.filter(x => typeof x.lat === 'number' && typeof x.lon === 'number' && !isNaN(x.lat) && !isNaN(x.lon));
+
+      withCoords.forEach(item => {
+        const isLoc = Boolean(item.isLocation || item.transactionType === 'LOCATION');
+        const colorInfo = getListingPriceColor(item);
+        const markerColor = colorInfo.color;
+        const priceStr = item.currentPrice ? item.currentPrice.toLocaleString('fr-FR') + ' F CFP' : 'Prix N.C';
+        const priceEur = item.currentPrice ? Math.round(item.currentPrice / 119.33).toLocaleString('fr-FR') + ' €' : '';
+        const pM2Str = item.priceM2 > 0 ? `${item.priceM2.toLocaleString('fr-FR')} F/m²` : (isLoc ? 'Loyer mensuel' : '');
+
+        const imgThumb = (item.images && item.images.length > 0 && item.images[0]) ? item.images[0] : (item.image || 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=400&q=80');
+
+        const badgeTx = isLoc 
+          ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-400 border border-purple-500/30">🔑 LOCATION</span>`
+          : `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/20 text-sky-400 border border-sky-500/30">🏡 VENTE</span>`;
+
+        const badgeTypo = item.roomType 
+          ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-200 border border-slate-700">${item.roomType}</span>` 
+          : '';
+
+        const safeTitle = (item.title || 'Annonce Immobilière').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+        const popupHtml = `
+          <div style="width: 250px; font-family: system-ui, -apple-system, sans-serif; font-size: 12px; line-height: 1.4; color: #f8fafc;">
+            <div style="position: relative; height: 125px; border-radius: 8px; overflow: hidden; margin-bottom: 8px; background: #0f172a;">
+              <img src="${imgThumb}" alt="${safeTitle}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=400&q=80'"/>
+              <div style="position: absolute; bottom: 4px; left: 4px; display: flex; gap: 4px;">
+                ${badgeTx}
+                ${badgeTypo}
+              </div>
             </div>
-          `;
-          circle.bindPopup(popupContent);
+            <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 700; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${safeTitle}">${safeTitle}</h4>
+            <div style="color: #94a3b8; font-size: 11px; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+              <span>📍 ${item.commune || 'Grand Nouméa'}</span>
+              <span>•</span>
+              <span style="color: #38bdf8;">${item.quartier || 'Secteur NC'}</span>
+            </div>
+            <div style="background: rgba(15, 23, 42, 0.7); padding: 6px 8px; border-radius: 6px; border-left: 3px solid ${markerColor}; margin-bottom: 8px;">
+              <div style="font-size: 14px; font-weight: 800; color: ${markerColor};">${priceStr} ${isLoc ? '<span style="font-size: 10px; font-weight: normal; color: #cbd5e1;">/mois</span>' : ''}</div>
+              <div style="font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; margin-top: 2px;">
+                <span>${pM2Str}</span>
+                <span>~${priceEur}</span>
+              </div>
+            </div>
+            <div style="font-size: 10px; color: #64748b; margin-bottom: 8px; display: flex; justify-content: space-between;">
+              <span>🏢 ${item.agencyName || item.source || 'Agence NC'}</span>
+              <span>Source : ${item.source || 'Immo NC'}</span>
+            </div>
+            <button onclick="openDetailModal('${item.id}')" style="width: 100%; padding: 6px 10px; background: #0284c7; color: white; border: none; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: background 0.2s;" onmouseover="this.style.background='#0369a1'" onmouseout="this.style.background='#0284c7'">
+              <span>👁️ Voir la fiche & photos</span>
+            </button>
+          </div>
+        `;
+
+        const marker = L.circleMarker([item.lat, item.lon], {
+          radius: isLoc ? 6.5 : 7.5,
+          fillColor: markerColor,
+          color: '#ffffff',
+          weight: 1.5,
+          opacity: 0.95,
+          fillOpacity: 0.85
         });
+
+        marker.bindPopup(popupHtml, { maxWidth: 280, className: 'custom-immo-popup' });
+        marker.addTo(mapMarkersGroup);
       });
+
+      if (showMapQuartiers && typeof quartiersData !== 'undefined') {
+        Object.keys(quartiersData).forEach(communeKey => {
+          quartiersData[communeKey].forEach(q => {
+            const prixMoyen = Math.round((q.prixM2Appt + q.prixM2Villa) / 2);
+            const qMarker = L.circleMarker([q.lat, q.lon], {
+              radius: 11,
+              fillColor: '#6366f1',
+              color: '#ffffff',
+              weight: 2,
+              dashArray: '3, 3',
+              opacity: 1,
+              fillOpacity: 0.8
+            });
+
+            const qPopup = `
+              <div style="font-family: inherit; width: 220px; font-size: 12px; line-height: 1.4; color: #f8fafc;">
+                <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: bold; color: #818cf8;">🏙️ Repère : ${q.nom}</h4>
+                <span style="font-size: 10px; color: #94a3b8; display: block; margin-bottom: 6px;">${communeKey} • ${q.standing}</span>
+                <p style="margin: 0 0 6px 0; color: #cbd5e1; font-style: italic;">${q.desc}</p>
+                <hr style="border: none; border-top: 1px solid #334155; margin: 4px 0;" />
+                <b>Prix moyen secteur :</b> <span style="color: #38bdf8; font-weight: bold;">${prixMoyen.toLocaleString('fr-FR')} F/m²</span>
+              </div>
+            `;
+            qMarker.bindPopup(qPopup);
+            qMarker.addTo(mapQuartiersGroup);
+          });
+        });
+      }
+
+      updateMapLegend();
     }
 
     // =========================================================================

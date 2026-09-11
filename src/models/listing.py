@@ -44,6 +44,7 @@ class RawListing(BaseModel):
     property_type_declared: Optional[str] = None
     agency_name: Optional[str] = None
     image_url: Optional[str] = None
+    images_json: Optional[str] = None
     extracted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -87,6 +88,7 @@ class CleanedListing(BaseModel):
     # Données temporelles et métadonnées
     agency_name: Optional[str] = None
     image_url: Optional[str] = None
+    images_json: Optional[str] = None
     published_at: Optional[datetime] = None
     scraped_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_active: bool = True
@@ -112,3 +114,32 @@ class CleanedListing(BaseModel):
         if self.prix_m2_habitable_xpf:
             return round(self.prix_m2_habitable_xpf / XPF_TO_EUR_RATE, 2)
         return None
+
+    @computed_field
+    @property
+    def room_type(self) -> Optional[str]:
+        """Typologie immobilière standard (Studio, F1, F2, F3, F4, F5+)."""
+        if not self.rooms or self.rooms < 1 or self.rooms > 15:
+            return None
+        if self.property_type in (PropertyType.TERRAIN, PropertyType.DOCK, PropertyType.LOCAL_COMMERCIAL, PropertyType.IMMEUBLE):
+            return None
+        if self.rooms == 1:
+            title_desc = f"{self.title} {self.description}".lower()
+            if "studio" in title_desc:
+                return "Studio"
+            return "F1"
+        if self.rooms >= 5:
+            return f"F{self.rooms}"
+        return f"F{self.rooms}"
+
+    @computed_field
+    @property
+    def room_type_code(self) -> Optional[str]:
+        """Code de filtre typologie ('1', '2', '3', '4', '5+')."""
+        if not self.rooms or self.rooms < 1 or self.rooms > 15:
+            return None
+        if self.property_type in (PropertyType.TERRAIN, PropertyType.DOCK, PropertyType.LOCAL_COMMERCIAL, PropertyType.IMMEUBLE):
+            return None
+        if self.rooms >= 5:
+            return "5+"
+        return str(self.rooms)

@@ -163,3 +163,117 @@ def test_rental_price_parsing_and_differentiation(cleaner):
     assert cleaned_sale.price_xpf == 22_000_000
     assert cleaned_sale.prix_m2_habitable_xpf == round(22_000_000 / 92.0, 2)
 
+
+def test_multi_photos_pipeline(tmp_path, cleaner):
+    import json
+    from src.ingestion.live_scraper import LiveNCScraper
+    scraper = LiveNCScraper()
+
+    # Annonce avec 3 photos
+    item_multi = {
+        "id": "777888",
+        "deal_type": "vente",
+        "price": 35,
+        "home_size": "100.0",
+        "property_type": "appartement",
+        "locality": {"name": "nouméa", "children": {"name": "anse vata"}},
+        "description": "Superbe F3 avec vue mer.",
+        "photos": [
+            {"picture": "https://gestion.immobilier.nc/photos/img1.jpg"},
+            {"picture": "https://gestion.immobilier.nc/photos/img2.jpg"},
+            {"thumbnail": "https://gestion.immobilier.nc/photos/img3.jpg"},
+        ]
+    }
+    raw = scraper.parse_item_to_raw_listing(item_multi)
+    assert raw is not None
+    assert raw.image_url == "https://gestion.immobilier.nc/photos/img1.jpg"
+    assert raw.images_json is not None
+
+    parsed_imgs = json.loads(raw.images_json)
+    assert len(parsed_imgs) == 3
+    assert parsed_imgs[0] == "https://gestion.immobilier.nc/photos/img1.jpg"
+    assert parsed_imgs[1] == "https://gestion.immobilier.nc/photos/img2.jpg"
+    assert parsed_imgs[2] == "https://gestion.immobilier.nc/photos/img3.jpg"
+
+    cleaned = cleaner.clean(raw)
+    assert cleaned is not None
+    assert cleaned.image_url == raw.image_url
+    assert cleaned.images_json == raw.images_json
+
+    # Test stockage DuckDB
+    test_db_path = tmp_path / "test_photos.duckdb"
+    db = PropertyDatabase(test_db_path)
+    db.upsert_listings([cleaned])
+
+    stored = db.query("SELECT image_url, images_json FROM listings WHERE id = 'bienmeloger.nc_777888' OR id = 'immobilier.nc_777888'")
+    assert len(stored) == 1
+    assert stored.iloc[0]["image_url"] == "https://gestion.immobilier.nc/photos/img1.jpg"
+    assert stored.iloc[0]["images_json"] == raw.images_json
+
+
+def test_typology_detection(cleaner):
+    # 1. Studio -> rooms = 1, bedrooms = 0
+    r_studio, b_studio = cleaner.parse_rooms(None, "Location joli studio meublé centre-ville")
+    assert r_studio == 1
+    assert b_studio == 0
+
+    # 2. F1 / F2 / F3 / F4
+    r1, _ = cleaner.parse_rooms("F1", "Appartement F1")
+    assert r1 == 1
+
+    r2, b2 = cleaner.parse_rooms("F2", "Bel appartement F2")
+    assert r2 == 2
+    assert b2 == 1
+
+    r3, b3 = cleaner.parse_rooms("F3", "Villa F3")
+    assert r3 == 3
+    assert b3 == 2
+
+    r4, b4 = cleaner.parse_rooms("F4", "Maison F4 avec 3 chambres")
+    assert r4 == 4
+    assert b4 == 3
+
+    # 3. >F5 / F5+
+    r5, _ = cleaner.parse_rooms(">F5", "Grande villa >F5 de standing")
+    assert r5 >= 5
+
+    # 4. Protection contre les faux positifs (UUIDs / hashes / balises IMG)
+    r_terrain, _ = cleaner.parse_rooms(None, "[IMG: https://storage.googleapis.com/test/fc4e4635-f750-4009.jpg] Terrain de 30 ares")
+    assert r_terrain is None
+
+    # 5. Non-residential classification
+    raw_terrain = RawListing(
+        source="test",
+        source_id="terrain_01",
+        url="https://test/terrain_01",
+        title="Terrain plat de 10 ares à Dumbéa",
+        description="Magnifique parcelle viabilisée.",
+        raw_price="12 000 000 F",
+        raw_surface="1000 m²",
+        property_type_declared="terrain",
+    )
+    cleaned_t = cleaner.clean(raw_terrain)
+    assert cleaned_t is not None
+    assert cleaned_t.rooms is None
+    assert cleaned_t.room_type is None
+    assert cleaned_t.room_type_code is None
+
+    # 6. Residential CleanedListing computed fields
+    raw_appt = RawListing(
+        source="test",
+        source_id="appt_01",
+        url="https://test/appt_01",
+        title="Appartement F3 avec terrasse Nouméa",
+        description="Résidence calme avec 2 chambres.",
+        raw_price="28 000 000 F",
+        raw_surface="75 m²",
+        property_type_declared="appartement",
+    )
+    cleaned_a = cleaner.clean(raw_appt)
+    assert cleaned_a is not None
+    assert cleaned_a.rooms == 3
+    assert cleaned_a.room_type == "F3"
+    assert cleaned_a.room_type_code == "3"
+
+
+

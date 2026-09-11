@@ -1,26 +1,26 @@
 {
-  "timestamp": "2026-09-10T21:30:53.344782+00:00",
-  "status": "WARNING_OR_ERROR",
-  "is_healthy": false,
+  "timestamp": "2026-09-11T04:01:36.176284+00:00",
+  "status": "HEALTHY",
+  "is_healthy": true,
   "logs_summary": {
     "file_exists": true,
     "log_path": "C:\\Users\\WD4060\\OneDrive - ENGIE\\Documents\\Antigravity\\Immobilier NC\\logs\\pipeline.log",
-    "total_lines": 265,
-    "info_count": 152,
-    "warning_count": 113,
+    "total_lines": 277,
+    "info_count": 155,
+    "warning_count": 122,
     "error_count": 0,
     "errors": [],
     "warnings": [
-      "L255: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=508074, source=bienmeloger.nc",
-      "L256: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=429402, source=immobilier.nc",
-      "L257: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=514607, source=immobilier.nc",
-      "L258: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=432356, source=immobilier.nc",
-      "L259: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=339905, source=immobilier.nc",
-      "L260: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=338256, source=immobilier.nc",
-      "L261: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=507502, source=bienmeloger.nc",
-      "L262: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=a1ca5992-19c2-4743-af8d-d63ee2b1d4e4, source=yatoo.nc",
-      "L263: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=c0a8334a-03d5-43ba-9dfc-5159d88ef56e, source=yatoo.nc",
-      "L264: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=43ffa5a0-6640-485c-9328-4701a0272758, source=yatoo.nc"
+      "L264: 2026-09-11 08:30:52 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=43ffa5a0-6640-485c-9328-4701a0272758, source=yatoo.nc",
+      "L268: 2026-09-11 15:01:35 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=422896, source=immobilier.nc",
+      "L269: 2026-09-11 15:01:35 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=442111, source=immobilier.nc",
+      "L270: 2026-09-11 15:01:35 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=431536, source=immobilier.nc",
+      "L271: 2026-09-11 15:01:35 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=502077, source=bienmeloger.nc",
+      "L272: 2026-09-11 15:01:35 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=270556, source=immobilier.nc",
+      "L273: 2026-09-11 15:01:35 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=499922, source=immobilier.nc",
+      "L274: 2026-09-11 15:01:35 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=a1ca5992-19c2-4743-af8d-d63ee2b1d4e4, source=yatoo.nc",
+      "L275: 2026-09-11 15:01:35 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=c0a8334a-03d5-43ba-9dfc-5159d88ef56e, source=yatoo.nc",
+      "L276: 2026-09-11 15:01:35 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=43ffa5a0-6640-485c-9328-4701a0272758, source=yatoo.nc"
     ]
   },
   "database_summary": {
@@ -78,6 +78,6 @@
       "v_marche_par_quartier_rows": 144,
       "v_marche_par_typologie_rows": 79
     },
-    "is_valid": false
+    "is_valid": true
   }
 }

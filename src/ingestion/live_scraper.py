@@ -163,16 +163,21 @@ class LiveNCScraper:
                 text_blob=f"{desc} {link_blob}"
             )
 
-            # 7. Détection de la source précise et photo authentique
+            # 7. Détection de la source précise et photos authentiques
             source = default_source
             photos = item.get("photos") or []
-            photo_url = ""
+            photo_urls = []
             if photos and isinstance(photos, list):
-                p0 = photos[0]
-                if isinstance(p0, dict):
-                    photo_url = p0.get("picture") or p0.get("thumbnail") or ""
-                    if "bienmeloger.nc" in photo_url:
-                        source = "bienmeloger.nc"
+                for p in photos:
+                    if isinstance(p, dict):
+                        u = str(p.get("picture") or p.get("thumbnail") or "").strip()
+                        if u and u.startswith("http") and u not in photo_urls:
+                            photo_urls.append(u)
+                            if "bienmeloger.nc" in u:
+                                source = "bienmeloger.nc"
+
+            photo_url = photo_urls[0] if photo_urls else ""
+            images_json = json.dumps(photo_urls) if photo_urls else None
 
             url = f"https://www.immobilier.nc/details/{item_id}"
             if photo_url:
@@ -192,6 +197,7 @@ class LiveNCScraper:
                 property_type_declared=prop_type,
                 agency_name=agency_name,
                 image_url=photo_url or None,
+                images_json=images_json,
                 extracted_at=datetime.now(timezone.utc),
             )
         except Exception as err:
@@ -270,15 +276,20 @@ class LiveNCScraper:
 
             # Photos Yatoo
             photos = item.get("photos") or []
-            photo_url = ""
+            photo_urls = []
             if photos and isinstance(photos, list):
-                p0 = photos[0]
-                if isinstance(p0, dict):
-                    photo_url = p0.get("contentUrl") or ""
-                    if not photo_url:
-                        thumbs = p0.get("thumbnail") or []
-                        if thumbs and isinstance(thumbs, list) and isinstance(thumbs[0], dict):
-                            photo_url = thumbs[0].get("contentUrl") or ""
+                for p in photos:
+                    if isinstance(p, dict):
+                        u = str(p.get("contentUrl") or "").strip()
+                        if not u:
+                            thumbs = p.get("thumbnail") or []
+                            if thumbs and isinstance(thumbs, list) and isinstance(thumbs[0], dict):
+                                u = str(thumbs[0].get("contentUrl") or "").strip()
+                        if u and u.startswith("http") and u not in photo_urls:
+                            photo_urls.append(u)
+
+            photo_url = photo_urls[0] if photo_urls else ""
+            images_json = json.dumps(photo_urls) if photo_urls else None
 
             # Inférence du type de bien
             lower_text = f"{title} {desc}".lower()
@@ -316,6 +327,7 @@ class LiveNCScraper:
                 property_type_declared=prop_type,
                 agency_name=agency_name,
                 image_url=photo_url or None,
+                images_json=images_json,
                 extracted_at=datetime.now(timezone.utc),
             )
         except Exception as e:

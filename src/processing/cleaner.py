@@ -122,27 +122,64 @@ class ListingCleaner:
         rooms: Optional[int] = None
         bedrooms: Optional[int] = None
 
-        blob = f"{raw_rooms or ''} {text_fallback}".lower()
+        # Nettoyage préalable : suppression des balises [IMG: ...] et URLs pour éviter les faux positifs hexadécimaux/UUIDs
+        clean_text = re.sub(r"\[IMG:\s*https?://[^\]]+\]", " ", text_fallback or "")
+        clean_text = re.sub(r"https?://\S+", " ", clean_text)
+        blob = f"{raw_rooms or ''} {clean_text}".lower()
 
-        # Détection type F1, F2, F3, F4, F5, F6, T2, T3...
-        f_match = re.search(r"\b[ft](\d+)\b", blob)
+        # 1. Détection des Studios / Studettes (1 pièce, 0 chambre)
+        if re.search(r"\b(studio|studette|chambre d'étudiant)\b", blob):
+            rooms = 1
+            bedrooms = 0
+
+        # 2. Détection type F1, F2, F3, F4, F5, F6, T1, T2, T3... (limité strictement de 1 à 12)
+        f_match = re.search(r"(?:^|[\s,;:(>\-])[ft]([1-9]|1[0-2])(?:\b|bis|ter|[\s,;:)<\-]|$)", blob)
         if f_match:
             try:
-                rooms = int(f_match.group(1))
-                if rooms > 1:
-                    bedrooms = rooms - 1
+                val = int(f_match.group(1))
+                if 1 <= val <= 12:
+                    rooms = val
+                    if rooms > 1 and bedrooms is None:
+                        bedrooms = rooms - 1
             except ValueError:
                 pass
 
-        # Détection explicite "X chambres"
-        chambres_match = re.search(r"(\d+)\s*chambre", blob)
-        if chambres_match:
+        # 2b. Détection ">F5" ou "F5+" ou "F5 et +"
+        if re.search(r"(?:>|\+)\s*f5|f5\s*(?:\+|et\s*plus)", blob):
+            if rooms is None or rooms < 5:
+                rooms = 5
+                if bedrooms is None:
+                    bedrooms = 4
+
+        # 3. Détection explicite "X pièces"
+        pieces_match = re.search(r"\b([1-9]|1[0-2])\s*pi[èe]ces?\b", blob)
+        if pieces_match and rooms is None:
             try:
-                bedrooms = int(chambres_match.group(1))
-                if rooms is None:
-                    rooms = bedrooms + 1
+                val = int(pieces_match.group(1))
+                if 1 <= val <= 12:
+                    rooms = val
+                    if rooms > 1 and bedrooms is None:
+                        bedrooms = rooms - 1
             except ValueError:
                 pass
+
+        # 4. Détection explicite "X chambres"
+        chambres_match = re.search(r"\b([1-9]|1[0-2])\s*chambres?\b", blob)
+        if chambres_match:
+            try:
+                bed_val = int(chambres_match.group(1))
+                if 1 <= bed_val <= 10:
+                    bedrooms = bed_val
+                    if rooms is None:
+                        rooms = bedrooms + 1
+            except ValueError:
+                pass
+
+        # Validation finale de cohérence (1 à 15 pièces max)
+        if rooms is not None and (rooms < 1 or rooms > 15):
+            rooms = None
+        if bedrooms is not None and (bedrooms < 0 or bedrooms > 15):
+            bedrooms = None
 
         return rooms, bedrooms
 
@@ -201,10 +238,14 @@ class ListingCleaner:
             raw.raw_surface, f"{raw.title} {raw.description}"
         )
 
-        rooms, bedrooms = self.parse_rooms(raw.raw_rooms, f"{raw.title} {raw.description}")
-
         prop_type = self.detect_property_type(raw.property_type_declared, raw.title, raw.description or "")
         trans_type = self.detect_transaction_type(raw.transaction_type_declared, raw.title, raw.description or "", price)
+
+        # Les biens non résidentiels (terrains, docks, locaux professionnels) n'ont pas de pièces d'habitation
+        if prop_type in (PropertyType.TERRAIN, PropertyType.DOCK, PropertyType.LOCAL_COMMERCIAL, PropertyType.IMMEUBLE):
+            rooms, bedrooms = None, None
+        else:
+            rooms, bedrooms = self.parse_rooms(raw.raw_rooms, f"{raw.title} {raw.description}")
 
         # Localisation
         commune, quartier, _ = self.geo_ref.find_location(f"{raw.raw_location or ''} {raw.title} {raw.description or ''}")
@@ -230,5 +271,6 @@ class ListingCleaner:
             bedrooms=bedrooms,
             agency_name=raw.agency_name,
             image_url=raw.image_url,
+            images_json=raw.images_json,
             is_active=True,
         )

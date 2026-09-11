@@ -66,6 +66,55 @@ def sanitize_for_json(obj):
     return obj
 
 
+# Référentiel géographique pour géolocalisation des annonces réelles
+GEO_REF_PATH = BASE_DIR / "data" / "reference" / "referentiel_grand_noumea.json"
+QUARTIER_COORDS: Dict[str, tuple[float, float]] = {}
+COMMUNE_CENTERS = {
+    "NOUMEA": (-22.271, 166.442),
+    "DUMBEA": (-22.185, 166.445),
+    "MONT_DORE": (-22.261, 166.535),
+    "PAITA": (-22.131, 166.365),
+    "AUTRE": (-21.55, 165.75),
+}
+
+if GEO_REF_PATH.exists():
+    try:
+        with open(GEO_REF_PATH, "r", encoding="utf-8") as f:
+            geo_data = json.load(f)
+        for com_k, com_val in geo_data.get("communes", {}).items():
+            for q_obj in com_val.get("quartiers", []):
+                q_name = str(q_obj.get("nom") or "").strip().lower()
+                lat_v = float(q_obj.get("latitude", 0))
+                lon_v = float(q_obj.get("longitude", 0))
+                if lat_v and lon_v:
+                    QUARTIER_COORDS[q_name] = (lat_v, lon_v)
+    except Exception as e:
+        logger.warning(f"Impossible de charger referentiel_grand_noumea.json : {e}")
+
+
+def resolve_listing_coords(item_id: str, commune_key: str, quartier_name: str) -> tuple[float, float]:
+    """Retourne les coordonnées GPS (lat, lon) précises avec micro-dispersion déterministe pour Leaflet."""
+    q_clean = (quartier_name or "").strip().lower()
+    base_lat, base_lon = None, None
+    if q_clean and q_clean in QUARTIER_COORDS:
+        base_lat, base_lon = QUARTIER_COORDS[q_clean]
+    else:
+        for k, coords in QUARTIER_COORDS.items():
+            if k in q_clean or q_clean in k:
+                base_lat, base_lon = coords
+                break
+
+    if not base_lat:
+        com_upper = (commune_key or "NOUMEA").upper().replace("-", "_")
+        base_lat, base_lon = COMMUNE_CENTERS.get(com_upper, COMMUNE_CENTERS["NOUMEA"])
+
+    # Micro-dispersion déterministe basée sur l'identifiant pour rendre tous les points du quartier visibles et cliquables
+    h = hash(str(item_id))
+    jitter_lat = ((abs(h) % 1000) / 1000.0 - 0.5) * 0.007
+    jitter_lon = (((abs(h) // 1000) % 1000) / 1000.0 - 0.5) * 0.007
+    return round(base_lat + jitter_lat, 5), round(base_lon + jitter_lon, 5)
+
+
 class NCImmoAPIHandler(SimpleHTTPRequestHandler):
     """
     Serveur HTTP combinant service des fichiers statiques du dashboard
@@ -180,6 +229,19 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     else:
                         img_url = "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=800&q=80"
 
+                # Extraction multi-photos depuis images_json
+                raw_images_json = row.get("images_json")
+                images = []
+                if pd.notna(raw_images_json) and raw_images_json:
+                    try:
+                        parsed_imgs = json.loads(str(raw_images_json))
+                        if isinstance(parsed_imgs, list):
+                            images = [str(u).strip() for u in parsed_imgs if str(u).strip().startswith("http")]
+                    except Exception:
+                        images = []
+                if not images and img_url:
+                    images = [img_url]
+
                 # 2. Type d'opération (Vente vs Location)
                 trans_type = str(row.get("transaction_type") or "VENTE").upper()
                 is_location = "LOCAT" in trans_type
@@ -212,6 +274,7 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                 commune_raw = COMMUNE_MAP.get(commune_enum, commune_enum.replace("_", "-").title())
 
                 quartier = safe_str(row.get("quartier"), "Secteur Calédonien")
+                lat_val, lon_val = resolve_listing_coords(str(row.get("id")), commune_enum, quartier)
                 price_xpf = safe_int(row.get("price_xpf"), 0)
                 surf_hab = safe_float(row.get("surface_habitable_m2"), 0.0)
                 surf_ter = safe_float(row.get("surface_terrain_m2"), 0.0)
@@ -258,9 +321,39 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
 
                 status = "new" if days_on_market <= 3 else "stable"
 
+                # Détermination de la typologie (Studio, F1, F2, F3, F4, F5+)
+                raw_rooms = safe_int(row.get("rooms"), 0)
+                raw_bedrooms = safe_int(row.get("bedrooms"), 0)
+                room_type = ""
+                room_type_code = ""
+
+                # Exclusion explicite des biens non résidentiels
+                if prop_type not in ("TERRAIN", "DOCK", "LOCAL_COMMERCIAL", "IMMEUBLE"):
+                    if 1 <= raw_rooms <= 15:
+                        if raw_rooms == 1:
+                            title_desc = f"{row.get('title') or ''} {desc}".lower()
+                            room_type = "Studio" if "studio" in title_desc else "F1"
+                            room_type_code = "1"
+                        elif raw_rooms == 2:
+                            room_type = "F2"
+                            room_type_code = "2"
+                        elif raw_rooms == 3:
+                            room_type = "F3"
+                            room_type_code = "3"
+                        elif raw_rooms == 4:
+                            room_type = "F4"
+                            room_type_code = "4"
+                        elif raw_rooms >= 5:
+                            room_type = f"F{raw_rooms}"
+                            room_type_code = "5+"
+
                 features = []
                 if is_location:
                     features.append("Location")
+                if room_type:
+                    features.append(f"{room_type} ({raw_bedrooms} ch.)" if raw_bedrooms > 0 else room_type)
+                elif raw_bedrooms > 0:
+                    features.append(f"{raw_bedrooms} ch.")
                 if surf_hab > 0:
                     features.append(f"{surf_hab:.0f} m² hab.")
                 if surf_ter > 0:
@@ -284,12 +377,18 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     "isLocation": is_location,
                     "commune": commune_raw,
                     "quartier": quartier,
+                    "lat": lat_val,
+                    "lon": lon_val,
                     "currentPrice": price_xpf,
                     "initialPrice": price_xpf,
                     "lastUpdateDate": "Aujourd'hui",
                     "surfaceHabitable": surf_hab,
                     "surfaceTerrain": surf_ter,
                     "surfaceVarangue": surf_var,
+                    "rooms": raw_rooms if raw_rooms > 0 else None,
+                    "bedrooms": raw_bedrooms if raw_bedrooms > 0 else None,
+                    "roomType": room_type,
+                    "roomTypeCode": room_type_code,
                     "dateAdded": now.strftime("%Y-%m-%d"),
                     "daysOnMarket": days_on_market,
                     "avgDaysOnMarket": 60,
@@ -307,6 +406,7 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     "agencyPhone": "+687 28.10.20",
                     "whatsapp": "687281020",
                     "image": img_url,
+                    "images": images,
                     "description": desc,
                     "features": features,
                     "priceHistory": [
