@@ -18,8 +18,8 @@
           "secteur": "Sud Côtier",
           "standing": "Premium",
           "description": "Plage, bars/restos, résidentiel prisé",
-          "latitude": -22.293,
-          "longitude": 166.436
+          "latitude": -22.2965,
+          "longitude": 166.4385
         },
         {
           "nom": "Val Plaisance",
@@ -34,8 +34,8 @@
           "secteur": "Sud Presqu'île",
           "standing": "Premium",
           "description": "Presqu'île résidentielle bordée par la baie de Sainte-Marie",
-          "latitude": -22.290,
-          "longitude": 166.471
+          "latitude": -22.2850,
+          "longitude": 166.4730
         },
         {
           "nom": "N'Géa",
@@ -114,8 +114,8 @@
           "secteur": "Nord Est Côtier",
           "standing": "Haut de gamme / Premium",
           "description": "Tina-sur-mer et Presqu'île de Tina, golf, villas de standing",
-          "latitude": -22.253,
-          "longitude": 166.488
+          "latitude": -22.2420,
+          "longitude": 166.4850
         },
         {
           "nom": "Centre-Ville",
@@ -224,64 +224,72 @@
           "secteur": "Mont-Dore Nord",
           "standing": "Intermédiaire",
           "description": "Entrée de commune, contigu à Nouméa",
-          "latitude": -22.227,
-          "longitude": 166.499
+          "latitude": -22.2209,
+          "longitude": 166.4945
         },
         {
           "nom": "Conception",
           "secteur": "Mont-Dore Ouest",
           "standing": "Intermédiaire / Historique",
           "description": "Église de la Conception, secteur résidentiel",
-          "latitude": -22.235,
-          "longitude": 166.508
+          "latitude": -22.2226,
+          "longitude": 166.5000
+        },
+        {
+          "nom": "Yahoué",
+          "secteur": "Mont-Dore Nord",
+          "standing": "Résidentiel / Vallée",
+          "description": "Vallée verdoyante et résidentielle très prisée",
+          "latitude": -22.2101,
+          "longitude": 166.4859
         },
         {
           "nom": "Robinson",
           "secteur": "Mont-Dore Ouest",
           "standing": "Intermédiaire / Pavillonnaire",
           "description": "Quartier résidentiel calme recherché",
-          "latitude": -22.247,
-          "longitude": 166.520
+          "latitude": -22.2185,
+          "longitude": 166.5118
         },
         {
           "nom": "Boulari",
           "secteur": "Mont-Dore Centre",
           "standing": "Intermédiaire",
           "description": "Centre administratif, mairie, marina de Boulari, collège",
-          "latitude": -22.261,
-          "longitude": 166.535
+          "latitude": -22.2285,
+          "longitude": 166.5206
         },
         {
           "nom": "Saint-Michel",
           "secteur": "Mont-Dore Sud",
           "standing": "Pavillonnaire",
           "description": "Secteur résidentiel le long du littoral",
-          "latitude": -22.278,
-          "longitude": 166.549
+          "latitude": -22.2300,
+          "longitude": 166.5293
         },
         {
           "nom": "Vallon-Dore",
           "secteur": "Mont-Dore Sud",
           "standing": "Pavillonnaire Littoral",
           "description": "Zone côtière verdoyante face au Mont-Dore",
-          "latitude": -22.285,
-          "longitude": 166.582
+          "latitude": -22.2660,
+          "longitude": 166.5725
         },
         {
           "nom": "La Coulée",
           "secteur": "Mont-Dore Est",
           "standing": "Accessible / Vallée",
           "description": "Vallée résidentielle et accès vers le Grand Sud",
-          "latitude": -22.242,
-          "longitude": 166.567
+          "latitude": -22.2367,
+          "longitude": 166.5842
         },
         {
           "nom": "Plum",
           "secteur": "Mont-Dore Sud",
           "standing": "Rural / Côtier",
           "description": "Extrémité sud, source d'eau du Mont-Dore",
-          "latitude": -22.302,
-          "longitude": 166.634
+          "latitude": -22.2719,
+          "longitude": 166.6282
         }
       ]
     },

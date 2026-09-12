@@ -70,11 +70,11 @@ def sanitize_for_json(obj):
 GEO_REF_PATH = BASE_DIR / "data" / "reference" / "referentiel_grand_noumea.json"
 QUARTIER_COORDS: Dict[str, tuple[float, float]] = {}
 COMMUNE_CENTERS = {
-    "NOUMEA": (-22.271, 166.442),
-    "DUMBEA": (-22.185, 166.445),
-    "MONT_DORE": (-22.261, 166.535),
-    "PAITA": (-22.131, 166.365),
-    "AUTRE": (-21.55, 165.75),
+    "NOUMEA": (-22.2710, 166.4420),
+    "DUMBEA": (-22.1850, 166.4450),
+    "MONT_DORE": (-22.2285, 166.5206),  # Boulari / Hôtel de Ville (terre ferme)
+    "PAITA": (-22.1310, 166.3650),
+    "AUTRE": (-21.5500, 165.7500),
 }
 
 if GEO_REF_PATH.exists():
@@ -92,26 +92,43 @@ if GEO_REF_PATH.exists():
         logger.warning(f"Impossible de charger referentiel_grand_noumea.json : {e}")
 
 
-def resolve_listing_coords(item_id: str, commune_key: str, quartier_name: str) -> tuple[float, float]:
-    """Retourne les coordonnées GPS (lat, lon) précises avec micro-dispersion déterministe pour Leaflet."""
+def resolve_listing_coords(item_id: str, commune_key: str, quartier_name: str, title: str = "") -> tuple[float, float]:
+    """Retourne les coordonnées GPS (lat, lon) précises sur la terre ferme avec dispersion déterministe."""
     q_clean = (quartier_name or "").strip().lower()
+    t_clean = (title or "").strip().lower()
     base_lat, base_lon = None, None
-    if q_clean and q_clean in QUARTIER_COORDS:
+
+    if q_clean and q_clean != "secteur calédonien" and q_clean in QUARTIER_COORDS:
         base_lat, base_lon = QUARTIER_COORDS[q_clean]
-    else:
+    elif q_clean and q_clean != "secteur calédonien":
         for k, coords in QUARTIER_COORDS.items():
             if k in q_clean or q_clean in k:
                 base_lat, base_lon = coords
                 break
 
+    # Recherche du quartier dans le titre si non trouvé ou générique
     if not base_lat:
-        com_upper = (commune_key or "NOUMEA").upper().replace("-", "_")
+        for k, coords in QUARTIER_COORDS.items():
+            if len(k) >= 4 and k in t_clean:
+                base_lat, base_lon = coords
+                break
+
+    if not base_lat:
+        com_upper = (commune_key or "NOUMEA").upper().replace("-", "_").replace(" ", "_")
+        if "MONT" in com_upper or "DORE" in com_upper:
+            com_upper = "MONT_DORE"
+        elif "DUMB" in com_upper:
+            com_upper = "DUMBEA"
+        elif "PAIT" in com_upper:
+            com_upper = "PAITA"
+        elif "NOUM" in com_upper:
+            com_upper = "NOUMEA"
         base_lat, base_lon = COMMUNE_CENTERS.get(com_upper, COMMUNE_CENTERS["NOUMEA"])
 
-    # Micro-dispersion déterministe basée sur l'identifiant pour rendre tous les points du quartier visibles et cliquables
+    # Micro-dispersion déterministe contenue (~120m) pour éviter les superpositions sans déborder en mer
     h = hash(str(item_id))
-    jitter_lat = ((abs(h) % 1000) / 1000.0 - 0.5) * 0.007
-    jitter_lon = (((abs(h) // 1000) % 1000) / 1000.0 - 0.5) * 0.007
+    jitter_lat = ((abs(h) % 1000) / 1000.0 - 0.5) * 0.0022
+    jitter_lon = (((abs(h) // 1000) % 1000) / 1000.0 - 0.5) * 0.0022
     return round(base_lat + jitter_lat, 5), round(base_lon + jitter_lon, 5)
 
 
@@ -274,7 +291,7 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                 commune_raw = COMMUNE_MAP.get(commune_enum, commune_enum.replace("_", "-").title())
 
                 quartier = safe_str(row.get("quartier"), "Secteur Calédonien")
-                lat_val, lon_val = resolve_listing_coords(str(row.get("id")), commune_enum, quartier)
+                lat_val, lon_val = resolve_listing_coords(str(row.get("id")), commune_enum, quartier, title=str(row.get("title") or ""))
                 price_xpf = safe_int(row.get("price_xpf"), 0)
                 surf_hab = safe_float(row.get("surface_habitable_m2"), 0.0)
                 surf_ter = safe_float(row.get("surface_terrain_m2"), 0.0)
