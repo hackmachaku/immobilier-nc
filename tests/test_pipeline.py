@@ -276,4 +276,86 @@ def test_typology_detection(cleaner):
     assert cleaned_a.room_type_code == "3"
 
 
+def test_furnished_parsing(cleaner):
+    # 1. Via facilities list (API immobilier.nc)
+    assert cleaner.parse_furnished(
+        facilities=["meuble", "climatisation"],
+        title="Appartement F2",
+        description="Joli F2 à l'Anse Vata",
+        property_type=PropertyType.APPARTEMENT,
+        transaction_type=TransactionType.LOCATION,
+    ) is True
+
+    # 2. Via explicit title/description "meublé"
+    assert cleaner.parse_furnished(
+        facilities=None,
+        title="Appartement F3 meublé à Nouméa",
+        description="Entièrement meublé et équipé",
+        property_type=PropertyType.APPARTEMENT,
+        transaction_type=TransactionType.LOCATION,
+    ) is True
+
+    # 3. Via explicit "non meublé" / "loué vide"
+    assert cleaner.parse_furnished(
+        facilities=None,
+        title="Maison F4 à Dumbéa",
+        description="Logement loué vide avec jardin",
+        property_type=PropertyType.MAISON_VILLA,
+        transaction_type=TransactionType.LOCATION,
+    ) is False
+
+    # 4. Negation priority over virtual staging disclaimer
+    assert cleaner.parse_furnished(
+        facilities=None,
+        title="Appartement meublé F3",
+        description="Les images meublées sont des projections IA. Le logement est actuellement loué non meublé.",
+        property_type=PropertyType.APPARTEMENT,
+        transaction_type=TransactionType.LOCATION,
+    ) is False
+
+    # 5. Prevention of false-positive "immeuble"
+    assert cleaner.parse_furnished(
+        facilities=None,
+        title="Appartement F2 au centre-ville",
+        description="Situé au 3ème étage de l'immeuble Le Foch.",
+        property_type=PropertyType.APPARTEMENT,
+        transaction_type=TransactionType.LOCATION,
+    ) is None
+
+    # 6. CleanedListing integration & computed property furnished_label
+    raw_meuble = RawListing(
+        source="immobilier.nc",
+        source_id="m1",
+        url="https://test/m1",
+        title="Studio meublé Baie des Citrons",
+        description="Studio entièrement meublé face mer.",
+        raw_price="85 000 F/mois",
+        raw_surface="28 m²",
+        property_type_declared="appartement",
+        transaction_type_declared="Location",
+        facilities=["meuble"],
+    )
+    cleaned_m = cleaner.clean(raw_meuble)
+    assert cleaned_m is not None
+    assert cleaned_m.is_furnished is True
+    assert cleaned_m.furnished_label == "Meublé"
+
+    raw_non_meuble = RawListing(
+        source="immobilier.nc",
+        source_id="nm1",
+        url="https://test/nm1",
+        title="F2 à Magenta",
+        description="Appartement loué non meublé.",
+        raw_price="95 000 F/mois",
+        raw_surface="45 m²",
+        property_type_declared="appartement",
+        transaction_type_declared="Location",
+    )
+    cleaned_nm = cleaner.clean(raw_non_meuble)
+    assert cleaned_nm is not None
+    assert cleaned_nm.is_furnished is False
+    assert cleaned_nm.furnished_label == "Non meublé"
+
+
+
 

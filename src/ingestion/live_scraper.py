@@ -183,6 +183,8 @@ class LiveNCScraper:
             if photo_url:
                 desc = f"[IMG: {photo_url}] {desc}"
 
+            facilities = item.get("facilities") if isinstance(item.get("facilities"), list) else None
+
             return RawListing(
                 source=source,
                 source_id=item_id,
@@ -198,6 +200,7 @@ class LiveNCScraper:
                 agency_name=agency_name,
                 image_url=photo_url or None,
                 images_json=images_json,
+                facilities=facilities,
                 extracted_at=datetime.now(timezone.utc),
             )
         except Exception as err:

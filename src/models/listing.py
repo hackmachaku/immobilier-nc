@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field, computed_field
 
 from src.config.settings import XPF_TO_EUR_RATE
@@ -45,6 +45,7 @@ class RawListing(BaseModel):
     agency_name: Optional[str] = None
     image_url: Optional[str] = None
     images_json: Optional[str] = None
+    facilities: Optional[List[str]] = None
     extracted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -83,6 +84,7 @@ class CleanedListing(BaseModel):
     has_pool: bool = False
     has_air_conditioning: bool = False
     is_secured: bool = False
+    is_furnished: Optional[bool] = None
     standing_estime: Optional[str] = None
 
     # Données temporelles et métadonnées
@@ -143,3 +145,14 @@ class CleanedListing(BaseModel):
         if self.rooms >= 5:
             return "5+"
         return str(self.rooms)
+
+    @computed_field
+    @property
+    def furnished_label(self) -> Optional[str]:
+        """Libellé explicite de l'ameublement (Meublé, Non meublé, ou None)."""
+        if self.is_furnished is True:
+            return "Meublé"
+        elif self.is_furnished is False:
+            return "Non meublé"
+        return None
+

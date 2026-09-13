@@ -261,6 +261,13 @@
             <option value="5+">F5 et + (5 pièces ou +)</option>
           </select>
 
+          <!-- FILTRE AMEUBLEMENT (Meublé / Non meublé) -->
+          <select id="furnishedFilter" onchange="filterListings()" class="px-3 py-1.5 rounded-lg bg-teal-950/40 border border-teal-500/40 text-xs text-teal-200 font-semibold focus:outline-none focus:ring-1 focus:ring-teal-400">
+            <option value="all">📦 Tous ameublements</option>
+            <option value="meuble">🛋️ Meublé</option>
+            <option value="non_meuble">🚪 Non meublé / Vide</option>
+          </select>
+
           <select id="opportunityFilter" onchange="filterListings()" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-[var(--border)] text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500">
             <option value="all">Tous les statuts</option>
             <option value="new">Nouveaux (48h)</option>
@@ -1918,6 +1925,7 @@
       const transaction = document.getElementById('transactionFilter')?.value || 'all';
       const commune = normStr(document.getElementById('communeFilter')?.value);
       const roomType = document.getElementById('roomTypeFilter')?.value || 'all';
+      const furnished = document.getElementById('furnishedFilter')?.value || 'all';
       const agency = normStr(document.getElementById('agencyFilter')?.value);
       const opportunity = document.getElementById('opportunityFilter')?.value || 'all';
       const sort = document.getElementById('sortFilter')?.value || 'date_desc';
@@ -1941,6 +1949,13 @@
           }
         }
 
+        let matchesFurnished = true;
+        if (furnished === 'meuble') {
+          matchesFurnished = item.isFurnished === true;
+        } else if (furnished === 'non_meuble') {
+          matchesFurnished = item.isFurnished === false;
+        }
+
         let matchesOpp = true;
         if (opportunity === 'new') matchesOpp = item.status === 'new';
         if (opportunity === 'price_drop') matchesOpp = item.status === 'price_drop';
@@ -1955,7 +1970,7 @@
           normStr(item.description).includes(search) ||
           (item.agencyPhone && item.agencyPhone.includes(search));
 
-        return matchesCategory && matchesCommune && matchesTransaction && matchesAgency && matchesRoomType && matchesOpp && matchesSearch;
+        return matchesCategory && matchesCommune && matchesTransaction && matchesAgency && matchesRoomType && matchesFurnished && matchesOpp && matchesSearch;
       });
 
       filtered.sort((a, b) => {
@@ -2038,6 +2053,13 @@
           ? `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 shadow-sm">🛋️ ${item.roomType}</span>`
           : '';
 
+        let furnishedBadge = '';
+        if (item.isFurnished === true) {
+          furnishedBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-teal-500/25 text-teal-300 border border-teal-500/40 flex items-center gap-1 shadow-sm">🛋️ Meublé</span>`;
+        } else if (item.isFurnished === false && isLoc) {
+          furnishedBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1">🚪 Non meublé</span>`;
+        }
+
         let aiVerdictCard = '';
         if (item.marketVerdict === 'A_NEGOCIER') {
           aiVerdictCard = `
@@ -2074,6 +2096,7 @@
                 ${transBadge}
                 ${categoryTag}
                 ${roomBadge}
+                ${furnishedBadge}
                 <span class="px-2 py-0.5 rounded text-[10px] font-semibold border ${ageColor} flex items-center gap-1">
                   ⏱️ ${item.daysOnMarket}j en ligne
                 </span>
@@ -2333,6 +2356,15 @@
                   🛋️ ${item.roomType}${item.bedrooms ? ` (${item.bedrooms} ch.)` : ''}
                 </span>
               ` : ''}
+              ${item.isFurnished === true ? `
+                <span class="px-3 py-1 rounded-lg text-xs font-bold bg-teal-500 text-slate-950 shadow-md flex items-center gap-1">
+                  🛋️ Meublé
+                </span>
+              ` : (item.isFurnished === false && isLoc ? `
+                <span class="px-3 py-1 rounded-lg text-xs font-bold bg-slate-700 text-slate-200 shadow-md flex items-center gap-1">
+                  🚪 Non meublé / Vide
+                </span>
+              ` : '')}
             </div>
             <h2 class="text-xl sm:text-2xl font-black text-white leading-tight drop-shadow-md">${item.title}</h2>
             <p class="text-xs sm:text-sm text-slate-300 mt-1 flex items-center gap-2 flex-wrap drop-shadow-sm">
@@ -2934,15 +2966,20 @@
           ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-200 border border-slate-700">${item.roomType}</span>` 
           : '';
 
+        const badgeFurnished = item.isFurnished === true
+          ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-teal-500/30 text-teal-300 border border-teal-500/40">🛋️ Meublé</span>`
+          : (item.isFurnished === false && isLoc ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">🚪 Non meublé</span>` : '');
+
         const safeTitle = (item.title || 'Annonce Immobilière').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
         const popupHtml = `
           <div style="width: 250px; font-family: system-ui, -apple-system, sans-serif; font-size: 12px; line-height: 1.4; color: #f8fafc;">
             <div style="position: relative; height: 125px; border-radius: 8px; overflow: hidden; margin-bottom: 8px; background: #0f172a;">
               <img src="${imgThumb}" alt="${safeTitle}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=400&q=80'"/>
-              <div style="position: absolute; bottom: 4px; left: 4px; display: flex; gap: 4px;">
+              <div style="position: absolute; bottom: 4px; left: 4px; display: flex; gap: 4px; flex-wrap: wrap;">
                 ${badgeTx}
                 ${badgeTypo}
+                ${badgeFurnished}
               </div>
             </div>
             <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 700; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${safeTitle}">${safeTitle}</h4>

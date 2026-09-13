@@ -364,9 +364,24 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                             room_type = f"F{raw_rooms}"
                             room_type_code = "5+"
 
+                raw_furnished = row.get("is_furnished")
+                is_furnished = None
+                if pd.notna(raw_furnished):
+                    is_furnished = bool(raw_furnished)
+                
+                furnished_label = "Non spécifié"
+                if is_furnished is True:
+                    furnished_label = "Meublé"
+                elif is_furnished is False:
+                    furnished_label = "Non meublé"
+
                 features = []
                 if is_location:
                     features.append("Location")
+                    if is_furnished is True:
+                        features.append("🛋️ Meublé")
+                    elif is_furnished is False:
+                        features.append("Non meublé")
                 if room_type:
                     features.append(f"{room_type} ({raw_bedrooms} ch.)" if raw_bedrooms > 0 else room_type)
                 elif raw_bedrooms > 0:
@@ -392,6 +407,8 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     "transactionType": transaction_type,
                     "transactionTypeLabel": transaction_label,
                     "isLocation": is_location,
+                    "isFurnished": is_furnished,
+                    "furnishedLabel": furnished_label,
                     "commune": commune_raw,
                     "quartier": quartier,
                     "lat": lat_val,

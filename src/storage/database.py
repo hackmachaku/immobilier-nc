@@ -49,6 +49,7 @@ class PropertyDatabase:
                 has_pool BOOLEAN,
                 has_air_conditioning BOOLEAN,
                 is_secured BOOLEAN,
+                is_furnished BOOLEAN,
                 standing_estime VARCHAR,
                 agency_name VARCHAR,
                 image_url VARCHAR,
@@ -58,6 +59,7 @@ class PropertyDatabase:
                 is_active BOOLEAN
             );
             ALTER TABLE listings ADD COLUMN IF NOT EXISTS images_json VARCHAR;
+            ALTER TABLE listings ADD COLUMN IF NOT EXISTS is_furnished BOOLEAN;
             """)
 
             # Vues analytiques
@@ -133,6 +135,7 @@ class PropertyDatabase:
                 "has_pool": l.has_pool,
                 "has_air_conditioning": l.has_air_conditioning,
                 "is_secured": l.is_secured,
+                "is_furnished": l.is_furnished,
                 "standing_estime": l.standing_estime,
                 "agency_name": l.agency_name,
                 "image_url": getattr(l, "image_url", None),
@@ -164,6 +167,7 @@ class PropertyDatabase:
                 has_pool = EXCLUDED.has_pool,
                 has_air_conditioning = EXCLUDED.has_air_conditioning,
                 is_secured = EXCLUDED.is_secured,
+                is_furnished = EXCLUDED.is_furnished,
                 image_url = COALESCE(EXCLUDED.image_url, listings.image_url),
                 images_json = COALESCE(EXCLUDED.images_json, listings.images_json),
                 scraped_at = EXCLUDED.scraped_at,

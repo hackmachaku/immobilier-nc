@@ -227,6 +227,43 @@ class ListingCleaner:
 
         return TransactionType.VENTE
 
+    def parse_furnished(
+        self,
+        facilities: Optional[list] = None,
+        title: str = "",
+        description: str = "",
+        property_type: Optional[PropertyType] = None,
+        transaction_type: Optional[TransactionType] = None,
+    ) -> Optional[bool]:
+        """
+        Détermine si le bien est meublé (True), non meublé (False) ou non spécifié (None).
+        Donne la priorité aux déclarations explicites dans facilities, puis analyse les motifs textuels.
+        """
+        # Seuls les biens d'habitation sont pertinents
+        if property_type in (PropertyType.TERRAIN, PropertyType.DOCK):
+            return None
+
+        # 1. Vérification dans les facilities fournies par l'API
+        if facilities and isinstance(facilities, list):
+            fac_lower = [str(f).strip().lower() for f in facilities]
+            if "meuble" in fac_lower or "meublé" in fac_lower:
+                return True
+
+        blob = f"{title} {description}".lower()
+
+        # 2. Détection explicite non-meublé / loué vide (prioritaire pour éviter les faux-positifs)
+        if re.search(r"\b(non\s*meubl[eé]e?s?|non-meubl[eé]e?s?|lou[eé]\s*vide|logement\s*vide|appartement\s*vide|villa\s*vide|maison\s*vide|bail\s*vide|non\s*équip[eé]e?s?)\b", blob):
+            return False
+
+        # 3. Détection explicite meublé
+        if re.search(r"\b(meubl[eé]e?s?|enti[eè]rement\s*meubl[eé]e?s?|tout\s*équip[eé]e?s?|semi[- ]meubl[eé]e?s?|équipé\s*et\s*meubl[eé]e?s?)\b", blob):
+            # Exclusion des faux-positifs de home staging virtuel (ex: "images meublées par IA")
+            if re.search(r"(?:images?|photos?|projections?|virtuel(?:le)?s?)\s*meubl[eé]es?", blob) and not re.search(r"\b(bien|logement|appartement|villa|f[1-9]|studio)\s*(?:enti[eè]rement\s*)?meubl[eé]", blob):
+                return None
+            return True
+
+        return None
+
     def clean(self, raw: RawListing) -> Optional[CleanedListing]:
         """Transforme une RawListing en CleanedListing validée et exploitable."""
         price = self.parse_price(raw.raw_price, f"{raw.title} {raw.description}")
@@ -252,6 +289,34 @@ class ListingCleaner:
 
         unique_id = f"{raw.source.lower()}_{raw.source_id}"
 
+        # Attributs qualitatifs
+        raw_facs = getattr(raw, "facilities", None) or []
+        blob_features = f"{raw.title} {raw.description or ''}".lower()
+
+        has_sea_view = bool(re.search(r"\b(vue\s*mer|vue\s*lagon|front\s*de\s*mer|bord\s*de\s*mer|les\s*pieds\s*dans\s*l'eau)\b", blob_features))
+        if "vue_mer" in raw_facs or "bord_de_mer" in raw_facs:
+            has_sea_view = True
+
+        has_pool = bool(re.search(r"\b(piscine|bassin)\b", blob_features))
+        if "piscine" in raw_facs or "piscine_commune" in raw_facs:
+            has_pool = True
+
+        has_ac = bool(re.search(r"\b(climatis[eé]|clim\b)", blob_features))
+        if "climatisation" in raw_facs:
+            has_ac = True
+
+        is_sec = bool(re.search(r"\b(s[eé]curis[eé]|gardien|digicode|interphone)\b", blob_features))
+        if "securite" in raw_facs:
+            is_sec = True
+
+        is_furnished = self.parse_furnished(
+            facilities=raw_facs,
+            title=raw.title,
+            description=raw.description or "",
+            property_type=prop_type,
+            transaction_type=trans_type,
+        )
+
         return CleanedListing(
             id=unique_id,
             source=raw.source,
@@ -269,6 +334,11 @@ class ListingCleaner:
             surface_terrasse_m2=surface_terrasse,
             rooms=rooms,
             bedrooms=bedrooms,
+            has_sea_view=has_sea_view,
+            has_pool=has_pool,
+            has_air_conditioning=has_ac,
+            is_secured=is_sec,
+            is_furnished=is_furnished,
             agency_name=raw.agency_name,
             image_url=raw.image_url,
             images_json=raw.images_json,
