@@ -148,44 +148,55 @@
       </button>
     </nav>
 
-    <!-- STATS SUMMARY CARDS (Comme sur la capture) -->
+    <!-- STATS SUMMARY CARDS (Interactifs & Cliquables pour filtrage instantané) -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-      <div class="p-4 rounded-xl bg-[var(--card)] border border-[var(--border)] flex items-center justify-between">
+      <div id="kpiCardTotal" onclick="filterByKpi('all')" role="button" tabindex="0" class="p-4 rounded-xl bg-[var(--card)] border border-[var(--border)] hover:border-sky-500/60 hover:shadow-lg hover:shadow-sky-500/5 cursor-pointer transition-all flex items-center justify-between group select-none" title="Cliquer pour afficher toutes les offres">
         <div>
-          <p class="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider">Offres sous veille</p>
+          <div class="flex items-center gap-1.5">
+            <p class="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider group-hover:text-slate-200 transition-colors">Offres sous veille</p>
+            <span id="kpiTagTotal" class="hidden px-1.5 py-0.2 rounded text-[9px] font-bold bg-sky-500/20 text-sky-300">Actif</span>
+          </div>
           <p class="text-2xl font-bold text-white mt-1" id="kpiTotal">0</p>
         </div>
-        <div class="w-10 h-10 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center">
+        <div class="w-10 h-10 rounded-lg bg-sky-500/10 text-sky-400 group-hover:bg-sky-500 group-hover:text-white transition-all flex items-center justify-center shrink-0">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
         </div>
       </div>
 
-      <div class="p-4 rounded-xl bg-[var(--card)] border border-[var(--border)] flex items-center justify-between">
+      <div id="kpiCardNew" onclick="filterByKpi('new')" role="button" tabindex="0" class="p-4 rounded-xl bg-[var(--card)] border border-[var(--border)] hover:border-sky-500/60 hover:shadow-lg hover:shadow-sky-500/10 cursor-pointer transition-all flex items-center justify-between group select-none" title="Cliquer pour filtrer uniquement les nouvelles annonces">
         <div>
-          <p class="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider">Nouveaux (48h)</p>
+          <div class="flex items-center gap-1.5">
+            <p class="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider group-hover:text-sky-300 transition-colors">Nouveaux (≤ 7j)</p>
+            <span id="kpiTagNew" class="hidden px-1.5 py-0.2 rounded text-[9px] font-bold bg-sky-500/20 text-sky-300">Actif</span>
+          </div>
           <p class="text-2xl font-bold text-sky-400 mt-1" id="kpiNew">0</p>
         </div>
-        <div class="w-10 h-10 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center">
+        <div class="w-10 h-10 rounded-lg bg-sky-500/10 text-sky-400 group-hover:bg-sky-500 group-hover:text-white transition-all flex items-center justify-center shrink-0">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
         </div>
       </div>
 
-      <div class="p-4 rounded-xl bg-[var(--card)] border border-[var(--border)] flex items-center justify-between">
+      <div id="kpiCardDrops" onclick="filterByKpi('price_drop')" role="button" tabindex="0" class="p-4 rounded-xl bg-[var(--card)] border border-[var(--border)] hover:border-emerald-500/60 hover:shadow-lg hover:shadow-emerald-500/10 cursor-pointer transition-all flex items-center justify-between group select-none" title="Cliquer pour filtrer uniquement les annonces en baisse de prix">
         <div>
-          <p class="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider">Baisses de Prix</p>
+          <div class="flex items-center gap-1.5">
+            <p class="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider group-hover:text-emerald-300 transition-colors">Baisses de Prix</p>
+            <span id="kpiTagDrops" class="hidden px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300">Actif</span>
+          </div>
           <p class="text-2xl font-bold text-emerald-400 mt-1" id="kpiDrops">0</p>
         </div>
-        <div class="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+        <div class="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-all flex items-center justify-center shrink-0">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"/></svg>
         </div>
       </div>
 
-      <div class="p-4 rounded-xl bg-[var(--card)] border border-[var(--border)] flex items-center justify-between">
+      <div id="kpiCardSources" onclick="switchTab('sources')" role="button" tabindex="0" class="p-4 rounded-xl bg-[var(--card)] border border-[var(--border)] hover:border-purple-500/60 hover:shadow-lg hover:shadow-purple-500/10 cursor-pointer transition-all flex items-center justify-between group select-none" title="Cliquer pour gérer les sources surveillées">
         <div>
-          <p class="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider">Sources Actives</p>
+          <div class="flex items-center gap-1.5">
+            <p class="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider group-hover:text-purple-300 transition-colors">Sources Actives</p>
+          </div>
           <p class="text-2xl font-bold text-purple-400 mt-1" id="kpiSources">8 canaux</p>
         </div>
-        <div class="w-10 h-10 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center">
+        <div class="w-10 h-10 rounded-lg bg-purple-500/10 text-purple-400 group-hover:bg-purple-500 group-hover:text-white transition-all flex items-center justify-center shrink-0">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
         </div>
       </div>
@@ -270,9 +281,9 @@
 
           <select id="opportunityFilter" onchange="filterListings()" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-[var(--border)] text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500">
             <option value="all">Tous les statuts</option>
-            <option value="new">Nouveaux (48h)</option>
-            <option value="price_drop">Baisses de prix récentes</option>
-            <option value="manual">Saisies manuelles</option>
+            <option value="new">🟢 Nouveaux (≤ 7j)</option>
+            <option value="price_drop">📉 Baisses de prix récentes</option>
+            <option value="manual">✍️ Saisies manuelles</option>
           </select>
 
           <select id="sortFilter" onchange="filterListings()" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-[var(--border)] text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500">
@@ -282,6 +293,20 @@
             <option value="drop_desc">Plus forte baisse (%)</option>
           </select>
         </div>
+      </div>
+
+      <!-- BANNIÈRE DE FILTRE KPI ACTIF (Feedback visuel instantané) -->
+      <div id="kpiActiveBanner" class="hidden p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between transition-all">
+        <div class="flex items-center gap-2.5">
+          <span id="kpiActiveBannerIcon" class="text-xl">📉</span>
+          <div>
+            <p id="kpiActiveBannerTitle" class="text-xs font-bold text-white"></p>
+            <p id="kpiActiveBannerSub" class="text-[11px] text-slate-400 mt-0.5"></p>
+          </div>
+        </div>
+        <button onclick="filterByKpi('all')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors shrink-0">
+          <span>✕ Réinitialiser le filtre</span>
+        </button>
       </div>
 
       <!-- LISTINGS GRID -->
@@ -1902,14 +1927,114 @@
     }
 
     function updateKPIs() {
-      document.getElementById('kpiTotal').textContent = `${listingsData.length}`;
-      document.getElementById('kpiNew').textContent = `${listingsData.filter(x => x.status === 'new').length}`;
-      document.getElementById('kpiDrops').textContent = `${listingsData.filter(x => x.status === 'price_drop').length}`;
-      document.getElementById('kpiSources').textContent = `${sourcesData.filter(s => s.status === 'active').length} canaux`;
-      document.getElementById('countSourcesBadgeTop').textContent = sourcesData.length;
-      document.getElementById('countSourcesBadgeNav').textContent = sourcesData.length;
+      const totalCount = listingsData.length;
+      const newCount = listingsData.filter(x => x.status === 'new' || (typeof x.daysOnMarket === 'number' && x.daysOnMarket <= 7)).length;
+      const dropsCount = listingsData.filter(x => x.status === 'price_drop' || (x.initialPrice > 0 && x.currentPrice < x.initialPrice)).length;
+
+      const kTotal = document.getElementById('kpiTotal');
+      const kNew = document.getElementById('kpiNew');
+      const kDrops = document.getElementById('kpiDrops');
+      const kSources = document.getElementById('kpiSources');
+
+      if (kTotal) kTotal.textContent = `${totalCount}`;
+      if (kNew) kNew.textContent = `${newCount}`;
+      if (kDrops) kDrops.textContent = `${dropsCount}`;
+      if (kSources) kSources.textContent = `${sourcesData.filter(s => s.status === 'active').length} canaux`;
+
+      const csTop = document.getElementById('countSourcesBadgeTop');
+      const csNav = document.getElementById('countSourcesBadgeNav');
+      if (csTop) csTop.textContent = sourcesData.length;
+      if (csNav) csNav.textContent = sourcesData.length;
+
       const allBadge = document.getElementById('allCountBadge');
-      if (allBadge) allBadge.textContent = listingsData.length;
+      if (allBadge) allBadge.textContent = totalCount;
+    }
+
+    function filterByKpi(type) {
+      if (currentTab !== 'veille') {
+        switchTab('veille');
+      }
+
+      const oppSelect = document.getElementById('opportunityFilter');
+      if (!oppSelect) return;
+
+      if (type === 'all') {
+        oppSelect.value = 'all';
+        activeCategory = 'all';
+        document.querySelectorAll('.category-btn').forEach((btn, idx) => {
+          if (idx === 0) {
+            btn.classList.add('active', 'bg-sky-500', 'text-white');
+            btn.classList.remove('bg-slate-800', 'text-slate-300');
+          } else {
+            btn.classList.remove('active', 'bg-sky-500', 'text-white');
+            btn.classList.add('bg-slate-800', 'text-slate-300');
+          }
+        });
+      } else if (oppSelect.value === type) {
+        // Toggle désactivation : clic à nouveau pour annuler le filtre
+        oppSelect.value = 'all';
+      } else {
+        oppSelect.value = type;
+
+        // Réinitialiser la catégorie à "Toutes les offres" pour afficher l'ensemble des résultats du KPI
+        activeCategory = 'all';
+        document.querySelectorAll('.category-btn').forEach((btn, idx) => {
+          if (idx === 0) {
+            btn.classList.add('active', 'bg-sky-500', 'text-white');
+            btn.classList.remove('bg-slate-800', 'text-slate-300');
+          } else {
+            btn.classList.remove('active', 'bg-sky-500', 'text-white');
+            btn.classList.add('bg-slate-800', 'text-slate-300');
+          }
+        });
+
+        // Adapter le tri par défaut selon le KPI sélectionné
+        const sortSelect = document.getElementById('sortFilter');
+        if (sortSelect) {
+          if (type === 'price_drop') {
+            sortSelect.value = 'drop_desc';
+          } else if (type === 'new') {
+            sortSelect.value = 'date_desc';
+          }
+        }
+      }
+
+      updateKpiActiveStyles(oppSelect.value);
+      filterListings();
+
+      const scrollTarget = document.getElementById('kpiActiveBanner') || document.getElementById('listingsGrid') || document.getElementById('tabContentVeille');
+      if (scrollTarget) {
+        scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+
+    function updateKpiActiveStyles(activeValue) {
+      const cardTotal = document.getElementById('kpiCardTotal');
+      const cardNew = document.getElementById('kpiCardNew');
+      const cardDrops = document.getElementById('kpiCardDrops');
+
+      const tagTotal = document.getElementById('kpiTagTotal');
+      const tagNew = document.getElementById('kpiTagNew');
+      const tagDrops = document.getElementById('kpiTagDrops');
+
+      // Nettoyage des styles actifs
+      if (cardTotal) cardTotal.classList.remove('ring-2', 'ring-sky-500', 'bg-sky-950/40', 'border-sky-500');
+      if (cardNew) cardNew.classList.remove('ring-2', 'ring-sky-500', 'bg-sky-950/40', 'border-sky-400');
+      if (cardDrops) cardDrops.classList.remove('ring-2', 'ring-emerald-500', 'bg-emerald-950/40', 'border-emerald-400');
+
+      if (tagTotal) tagTotal.classList.add('hidden');
+      if (tagNew) tagNew.classList.add('hidden');
+      if (tagDrops) tagDrops.classList.add('hidden');
+
+      if (activeValue === 'price_drop') {
+        if (cardDrops) cardDrops.classList.add('ring-2', 'ring-emerald-500', 'bg-emerald-950/40', 'border-emerald-400');
+        if (tagDrops) tagDrops.classList.remove('hidden');
+      } else if (activeValue === 'new') {
+        if (cardNew) cardNew.classList.add('ring-2', 'ring-sky-500', 'bg-sky-950/40', 'border-sky-400');
+        if (tagNew) tagNew.classList.remove('hidden');
+      } else if (activeValue === 'all') {
+        if (cardTotal) cardTotal.classList.add('border-sky-500/40');
+      }
     }
 
     function normStr(str) {
@@ -1929,6 +2054,8 @@
       const agency = normStr(document.getElementById('agencyFilter')?.value);
       const opportunity = document.getElementById('opportunityFilter')?.value || 'all';
       const sort = document.getElementById('sortFilter')?.value || 'date_desc';
+
+      updateKpiActiveStyles(opportunity);
 
       let filtered = listingsData.filter(item => {
         const matchesCategory = activeCategory === 'all' || item.category === activeCategory;
@@ -1957,9 +2084,13 @@
         }
 
         let matchesOpp = true;
-        if (opportunity === 'new') matchesOpp = item.status === 'new';
-        if (opportunity === 'price_drop') matchesOpp = item.status === 'price_drop';
-        if (opportunity === 'manual') matchesOpp = item.isManual === true;
+        if (opportunity === 'new') {
+          matchesOpp = item.status === 'new' || (typeof item.daysOnMarket === 'number' && item.daysOnMarket <= 7);
+        } else if (opportunity === 'price_drop') {
+          matchesOpp = item.status === 'price_drop' || (item.initialPrice > 0 && item.currentPrice < item.initialPrice);
+        } else if (opportunity === 'manual') {
+          matchesOpp = item.isManual === true;
+        }
 
         const matchesSearch = !search || 
           normStr(item.title).includes(search) || 
@@ -1972,6 +2103,36 @@
 
         return matchesCategory && matchesCommune && matchesTransaction && matchesAgency && matchesRoomType && matchesFurnished && matchesOpp && matchesSearch;
       });
+
+      // Gestion de la bannière active KPI
+      const banner = document.getElementById('kpiActiveBanner');
+      const bannerIcon = document.getElementById('kpiActiveBannerIcon');
+      const bannerTitle = document.getElementById('kpiActiveBannerTitle');
+      const bannerSub = document.getElementById('kpiActiveBannerSub');
+
+      if (banner) {
+        if (opportunity === 'price_drop') {
+          banner.classList.remove('hidden');
+          banner.className = "p-3 rounded-xl bg-emerald-950/50 border border-emerald-500/40 flex items-center justify-between transition-all shadow-lg shadow-emerald-950/20";
+          if (bannerIcon) bannerIcon.textContent = "📉";
+          if (bannerTitle) bannerTitle.innerHTML = `<span class="text-emerald-300 font-bold text-sm">Filtre actif : ${filtered.length} annonce${filtered.length > 1 ? 's' : ''} en baisse de prix</span>`;
+          if (bannerSub) bannerSub.textContent = "Affichage exclusif des biens ayant bénéficié d'une baisse de prix certifiée.";
+        } else if (opportunity === 'new') {
+          banner.classList.remove('hidden');
+          banner.className = "p-3 rounded-xl bg-sky-950/50 border border-sky-500/40 flex items-center justify-between transition-all shadow-lg shadow-sky-950/20";
+          if (bannerIcon) bannerIcon.textContent = "🟢";
+          if (bannerTitle) bannerTitle.innerHTML = `<span class="text-sky-300 font-bold text-sm">Filtre actif : ${filtered.length} nouvelle${filtered.length > 1 ? 's' : ''} annonce${filtered.length > 1 ? 's' : ''} (≤ 7 jours)</span>`;
+          if (bannerSub) bannerSub.textContent = "Dernières opportunités parues récemment sur le marché calédonien.";
+        } else if (opportunity === 'manual') {
+          banner.classList.remove('hidden');
+          banner.className = "p-3 rounded-xl bg-purple-950/50 border border-purple-500/40 flex items-center justify-between transition-all";
+          if (bannerIcon) bannerIcon.textContent = "✍️";
+          if (bannerTitle) bannerTitle.innerHTML = `<span class="text-purple-300 font-bold text-sm">Filtre actif : ${filtered.length} saisie${filtered.length > 1 ? 's' : ''} manuelle${filtered.length > 1 ? 's' : ''}</span>`;
+          if (bannerSub) bannerSub.textContent = "Offres ajoutées manuellement par vos soins.";
+        } else {
+          banner.classList.add('hidden');
+        }
+      }
 
       filtered.sort((a, b) => {
         if (sort === 'price_asc') return a.currentPrice - b.currentPrice;
