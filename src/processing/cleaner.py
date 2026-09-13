@@ -342,5 +342,8 @@ class ListingCleaner:
             agency_name=raw.agency_name,
             image_url=raw.image_url,
             images_json=raw.images_json,
+            initial_price_xpf=price,
+            published_at=raw.published_at,
+            first_seen_at=raw.published_at or raw.extracted_at,
             is_active=True,
         )

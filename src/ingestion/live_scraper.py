@@ -20,6 +20,25 @@ from src.domain.agencies_directory import resolve_agency_name
 logger = get_logger("live_scraper")
 
 
+def parse_datetime_safe(val: Any) -> Optional[datetime]:
+    """Convertit une chaîne de date (ISO ou format SQL) en objet datetime UTC cohérent."""
+    if not val:
+        return None
+    val_str = str(val).strip()
+    try:
+        dt = datetime.fromisoformat(val_str.replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(val_str, fmt)
+            return dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+    return None
+
+
 class LiveNCScraper:
     """
     Scraper en direct multi-sources connecté :
@@ -184,6 +203,8 @@ class LiveNCScraper:
                 desc = f"[IMG: {photo_url}] {desc}"
 
             facilities = item.get("facilities") if isinstance(item.get("facilities"), list) else None
+            published_dt = parse_datetime_safe(item.get("published_at") or item.get("created_at"))
+            created_dt = parse_datetime_safe(item.get("created_at"))
 
             return RawListing(
                 source=source,
@@ -201,6 +222,8 @@ class LiveNCScraper:
                 image_url=photo_url or None,
                 images_json=images_json,
                 facilities=facilities,
+                published_at=published_dt,
+                created_at_declared=created_dt,
                 extracted_at=datetime.now(timezone.utc),
             )
         except Exception as err:
@@ -316,6 +339,8 @@ class LiveNCScraper:
                 text_blob=f"{title} {desc}"
             )
 
+            pub_dt = parse_datetime_safe(item.get("createdAt"))
+
             return RawListing(
                 source="yatoo.nc",
                 source_id=item_id,
@@ -331,6 +356,7 @@ class LiveNCScraper:
                 agency_name=agency_name,
                 image_url=photo_url or None,
                 images_json=images_json,
+                published_at=pub_dt,
                 extracted_at=datetime.now(timezone.utc),
             )
         except Exception as e:

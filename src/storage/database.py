@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 import duckdb
@@ -54,12 +55,30 @@ class PropertyDatabase:
                 agency_name VARCHAR,
                 image_url VARCHAR,
                 images_json VARCHAR,
+                initial_price_xpf BIGINT,
+                first_seen_at TIMESTAMP,
+                last_price_change_at TIMESTAMP,
                 published_at TIMESTAMP,
                 scraped_at TIMESTAMP,
                 is_active BOOLEAN
             );
             ALTER TABLE listings ADD COLUMN IF NOT EXISTS images_json VARCHAR;
             ALTER TABLE listings ADD COLUMN IF NOT EXISTS is_furnished BOOLEAN;
+            ALTER TABLE listings ADD COLUMN IF NOT EXISTS initial_price_xpf BIGINT;
+            ALTER TABLE listings ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMP;
+            ALTER TABLE listings ADD COLUMN IF NOT EXISTS last_price_change_at TIMESTAMP;
+
+            -- Table dédiée à l'historique complet des variations de prix
+            CREATE TABLE IF NOT EXISTS listing_price_history (
+                id VARCHAR PRIMARY KEY,
+                listing_id VARCHAR,
+                price_xpf BIGINT,
+                price_eur DOUBLE,
+                event_type VARCHAR,
+                price_change_xpf BIGINT,
+                price_change_pct DOUBLE,
+                recorded_at TIMESTAMP
+            );
             """)
 
             # Vues analytiques
@@ -140,6 +159,9 @@ class PropertyDatabase:
                 "agency_name": l.agency_name,
                 "image_url": getattr(l, "image_url", None),
                 "images_json": getattr(l, "images_json", None),
+                "initial_price_xpf": getattr(l, "initial_price_xpf", None) or l.price_xpf,
+                "first_seen_at": getattr(l, "first_seen_at", None) or l.published_at or l.scraped_at,
+                "last_price_change_at": getattr(l, "last_price_change_at", None),
                 "published_at": l.published_at,
                 "scraped_at": l.scraped_at,
                 "is_active": l.is_active,
@@ -148,8 +170,60 @@ class PropertyDatabase:
         df = pd.DataFrame(records)
 
         with self.get_connection() as con:
-            # Insertion avec dédoublonnage (ON CONFLICT DO UPDATE)
             con.register("staging_df", df)
+
+            # 1. Analyse des variations de prix par rapport aux données existantes
+            existing_df = con.execute("""
+                SELECT id, price_xpf, published_at, first_seen_at, initial_price_xpf 
+                FROM listings 
+                WHERE id IN (SELECT id FROM staging_df)
+            """).df()
+            existing_map = {row["id"]: row for _, row in existing_df.iterrows()}
+
+            history_records = []
+            for l in listings:
+                ex = existing_map.get(l.id)
+                rec_time = l.scraped_at or datetime.now(timezone.utc)
+                if ex is None:
+                    # Nouvelle annonce : événement initial dans l'historique
+                    init_time = l.published_at or l.scraped_at or datetime.now(timezone.utc)
+                    history_records.append({
+                        "id": f"hist_{l.id}_{int(init_time.timestamp()) if init_time else 0}",
+                        "listing_id": l.id,
+                        "price_xpf": l.price_xpf,
+                        "price_eur": l.price_eur,
+                        "event_type": "INITIAL",
+                        "price_change_xpf": 0,
+                        "price_change_pct": 0.0,
+                        "recorded_at": init_time,
+                    })
+                else:
+                    old_p = ex.get("price_xpf")
+                    if old_p is not None and not pd.isna(old_p) and int(old_p) != l.price_xpf:
+                        diff_xpf = l.price_xpf - int(old_p)
+                        diff_pct = round((diff_xpf / int(old_p)) * 100, 2)
+                        ev_type = "PRICE_DROP" if diff_xpf < 0 else "PRICE_INCREASE"
+                        history_records.append({
+                            "id": f"hist_{l.id}_{int(rec_time.timestamp()) if rec_time else 0}",
+                            "listing_id": l.id,
+                            "price_xpf": l.price_xpf,
+                            "price_eur": l.price_eur,
+                            "event_type": ev_type,
+                            "price_change_xpf": diff_xpf,
+                            "price_change_pct": diff_pct,
+                            "recorded_at": rec_time,
+                        })
+
+            if history_records:
+                hist_df = pd.DataFrame(history_records)
+                con.register("staging_hist_df", hist_df)
+                con.execute("""
+                INSERT INTO listing_price_history BY NAME
+                SELECT * FROM staging_hist_df
+                ON CONFLICT (id) DO NOTHING;
+                """)
+
+            # 2. Insertion avec dédoublonnage et préservation du prix d'origine
             con.execute("""
             INSERT INTO listings BY NAME
             SELECT * FROM staging_df
@@ -157,6 +231,13 @@ class PropertyDatabase:
                 description = EXCLUDED.description,
                 price_xpf = EXCLUDED.price_xpf,
                 price_eur = EXCLUDED.price_eur,
+                initial_price_xpf = COALESCE(listings.initial_price_xpf, EXCLUDED.initial_price_xpf, EXCLUDED.price_xpf),
+                first_seen_at = COALESCE(listings.first_seen_at, EXCLUDED.first_seen_at, listings.scraped_at),
+                published_at = COALESCE(listings.published_at, EXCLUDED.published_at),
+                last_price_change_at = CASE 
+                    WHEN listings.price_xpf != EXCLUDED.price_xpf THEN EXCLUDED.scraped_at 
+                    ELSE listings.last_price_change_at 
+                END,
                 charges_mensuelles_xpf = EXCLUDED.charges_mensuelles_xpf,
                 surface_habitable_m2 = EXCLUDED.surface_habitable_m2,
                 surface_terrain_m2 = EXCLUDED.surface_terrain_m2,

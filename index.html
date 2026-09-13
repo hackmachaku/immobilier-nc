@@ -2023,13 +2023,17 @@
           ? `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1">🔑 Location</span>`
           : `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">🏡 Vente</span>`;
 
+        const dropDisplay = dropAmount >= 1000000
+          ? `-${(dropAmount/1000000).toFixed(1)}M`
+          : `-${(dropAmount/1000).toFixed(0)}k F`;
+
         let badgeHtml = '';
         if (item.isManual) {
           badgeHtml = `<span class="px-2.5 py-1 text-xs font-semibold rounded-full badge-manual flex items-center gap-1">✍️ Saisie Manuelle</span>`;
         } else if (item.status === 'new') {
           badgeHtml = `<span class="px-2.5 py-1 text-xs font-semibold rounded-full badge-new flex items-center gap-1">🟢 Nouveau (${item.daysOnMarket}j)</span>`;
         } else if (item.status === 'price_drop') {
-          badgeHtml = `<span class="px-2.5 py-1 text-xs font-semibold rounded-full badge-down flex items-center gap-1">📉 -${dropPercent}% (-${(dropAmount/1000000).toFixed(1)}M)</span>`;
+          badgeHtml = `<span class="px-2.5 py-1 text-xs font-semibold rounded-full badge-down flex items-center gap-1">📉 -${dropPercent}% (${dropDisplay})</span>`;
         } else {
           badgeHtml = `<span class="px-2.5 py-1 text-xs font-medium rounded-full bg-slate-800 text-slate-300 border border-slate-700">⚖️ Stable</span>`;
         }
@@ -2045,7 +2049,7 @@
           categoryTag = `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">🏡 Maison & Villa</span>`;
         }
 
-        const ageColor = item.daysOnMarket <= 3 
+        const ageColor = item.daysOnMarket <= 7 
           ? "bg-emerald-950/80 text-emerald-300 border-emerald-500/30"
           : (item.daysOnMarket > 45 ? "bg-amber-950/80 text-amber-300 border-amber-500/30" : "bg-slate-900/80 text-slate-300 border-slate-700");
 
@@ -2127,7 +2131,7 @@
                   ${hasDropped ? `
                     <div class="text-right">
                       <span class="text-xs text-slate-400 line-through">${formatPriceXPF(item.initialPrice)}</span>
-                      <span class="text-xs font-semibold text-emerald-400 block">Gain: ${(dropAmount/1000000).toFixed(1)}M F</span>
+                      <span class="text-xs font-semibold text-emerald-400 block">Gain: ${dropAmount >= 1000000 ? (dropAmount/1000000).toFixed(1) + 'M F' : dropAmount.toLocaleString('fr-FR') + ' F'}${isLoc ? '/mois' : ''}</span>
                     </div>
                   ` : ''}
                 </div>
@@ -2136,8 +2140,8 @@
                 ${hasDropped ? `
                   <div class="text-[11px] text-slate-300 mt-1.5 flex items-center gap-1.5 bg-slate-900/80 px-2 py-1 rounded-lg border border-slate-800">
                     <span class="text-slate-500">Trajectoire :</span>
-                    <span class="line-through text-slate-400">${(item.initialPrice/1000000).toFixed(1)}M</span>
-                    <span class="text-emerald-400 font-bold">➔ ${(item.currentPrice/1000000).toFixed(1)}M F CFP (-${dropPercent}%)</span>
+                    <span class="line-through text-slate-400">${item.initialPrice >= 1000000 ? (item.initialPrice/1000000).toFixed(1) + 'M' : Math.round(item.initialPrice/1000) + 'k'}</span>
+                    <span class="text-emerald-400 font-bold">➔ ${item.currentPrice >= 1000000 ? (item.currentPrice/1000000).toFixed(1) + 'M F' : item.currentPrice.toLocaleString('fr-FR') + ' F'}${isLoc ? '/m' : ''} (-${dropPercent}%)</span>
                   </div>
                 ` : `
                   <div class="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1.5 bg-slate-900/50 px-2 py-1 rounded-lg border border-slate-800/60">

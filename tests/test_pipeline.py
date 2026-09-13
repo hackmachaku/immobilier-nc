@@ -357,5 +357,76 @@ def test_furnished_parsing(cleaner):
     assert cleaned_nm.furnished_label == "Non meublé"
 
 
+def test_published_at_and_price_history(tmp_path, cleaner):
+    from datetime import datetime, timezone
+    
+    test_db_path = tmp_path / "test_history.duckdb"
+    db = PropertyDatabase(test_db_path)
+    
+    pub_date = datetime(2025, 8, 1, 12, 0, tzinfo=timezone.utc)
+    raw = RawListing(
+        source="immobilier.nc",
+        source_id="hist_1",
+        url="https://test/hist1",
+        title="Maison F4 Anse Vata Nouméa",
+        description="Belle maison avec jardin",
+        raw_price="50 000 000 F",
+        raw_surface="120 m²",
+        property_type_declared="maison",
+        transaction_type_declared="Vente",
+        published_at=pub_date,
+    )
+    
+    cleaned = cleaner.clean(raw)
+    assert cleaned is not None
+    assert cleaned.published_at == pub_date
+    assert cleaned.initial_price_xpf == 50_000_000
+    assert cleaned.first_seen_at == pub_date
+    
+    # 1. Insertion initiale
+    db.upsert_listings([cleaned])
+    
+    with db.get_connection() as con:
+        row = con.execute("SELECT price_xpf, initial_price_xpf, published_at FROM listings WHERE id = 'immobilier.nc_hist_1'").fetchone()
+        assert row[0] == 50_000_000
+        assert row[1] == 50_000_000
+        assert row[2] is not None
+        
+        hist = con.execute("SELECT event_type, price_xpf, price_change_xpf, price_change_pct FROM listing_price_history WHERE listing_id = 'immobilier.nc_hist_1'").fetchall()
+        assert len(hist) == 1
+        assert hist[0][0] == "INITIAL"
+        assert hist[0][1] == 50_000_000
+        
+    # 2. Baisse de prix à 47 000 000 F (-6%)
+    raw_dropped = RawListing(
+        source="immobilier.nc",
+        source_id="hist_1",
+        url="https://test/hist1",
+        title="Maison F4 Anse Vata Nouméa",
+        description="Belle maison avec jardin",
+        raw_price="47 000 000 F",
+        raw_surface="120 m²",
+        property_type_declared="maison",
+        transaction_type_declared="Vente",
+        published_at=pub_date,
+    )
+    cleaned_dropped = cleaner.clean(raw_dropped)
+    db.upsert_listings([cleaned_dropped])
+    
+    with db.get_connection() as con:
+        row = con.execute("SELECT price_xpf, initial_price_xpf, last_price_change_at FROM listings WHERE id = 'immobilier.nc_hist_1'").fetchone()
+        assert row[0] == 47_000_000
+        assert row[1] == 50_000_000  # Le prix initial est fidèlement préservé
+        assert row[2] is not None
+        
+        hist = con.execute("SELECT event_type, price_xpf, price_change_xpf, price_change_pct FROM listing_price_history WHERE listing_id = 'immobilier.nc_hist_1' ORDER BY recorded_at ASC").fetchall()
+        assert len(hist) == 2
+        assert hist[1][0] == "PRICE_DROP"
+        assert hist[1][1] == 47_000_000
+        assert hist[1][2] == -3_000_000
+        assert round(hist[1][3], 1) == -6.0
+
+
+
 
 

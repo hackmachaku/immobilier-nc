@@ -46,6 +46,8 @@ class RawListing(BaseModel):
     image_url: Optional[str] = None
     images_json: Optional[str] = None
     facilities: Optional[List[str]] = None
+    published_at: Optional[datetime] = None
+    created_at_declared: Optional[datetime] = None
     extracted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -66,6 +68,7 @@ class CleanedListing(BaseModel):
 
     # Données financières
     price_xpf: int = Field(ge=0, description="Prix exprimé en Francs Pacifique (XPF)")
+    initial_price_xpf: Optional[int] = Field(default=None, ge=0, description="Prix initial lors de la première observation")
     charges_mensuelles_xpf: Optional[int] = Field(default=None, ge=0)
 
     # Surfaces (m²)
@@ -92,6 +95,8 @@ class CleanedListing(BaseModel):
     image_url: Optional[str] = None
     images_json: Optional[str] = None
     published_at: Optional[datetime] = None
+    first_seen_at: Optional[datetime] = None
+    last_price_change_at: Optional[datetime] = None
     scraped_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_active: bool = True
 

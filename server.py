@@ -208,6 +208,22 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                 LIMIT 1500
             """)
 
+            # Pré-chargement de l'historique complet des prix ordonné chronologiquement
+            history_by_listing: Dict[str, List[Dict[str, Any]]] = {}
+            try:
+                hist_df = db.query("""
+                    SELECT listing_id, price_xpf, price_eur, event_type, price_change_xpf, price_change_pct, recorded_at
+                    FROM listing_price_history
+                    ORDER BY recorded_at ASC
+                """)
+                for _, h_row in hist_df.iterrows():
+                    l_id = str(h_row["listing_id"])
+                    if l_id not in history_by_listing:
+                        history_by_listing[l_id] = []
+                    history_by_listing[l_id].append(h_row.to_dict())
+            except Exception as e:
+                logger.warning(f"Impossible de charger l'historique des prix : {e}")
+
             listings = []
             now = datetime.now(timezone.utc)
 
@@ -326,17 +342,100 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                         "Marge de négociation courante sur ce secteur : entre -4% et -8%."
                     ]
 
+                init_price_xpf = safe_int(row.get("initial_price_xpf"), 0)
+                if init_price_xpf <= 0:
+                    init_price_xpf = price_xpf
+
+                # Date de publication d'origine et calcul réel de daysOnMarket
+                pub_time = row.get("published_at")
+                first_seen = row.get("first_seen_at")
                 scraped_time = row.get("scraped_at")
+                ref_time = pub_time if pd.notna(pub_time) else (first_seen if pd.notna(first_seen) else scraped_time)
+
                 days_on_market = 1
-                if scraped_time is not None:
+                date_added_str = now.strftime("%Y-%m-%d")
+                if pd.notna(ref_time):
                     try:
-                        scraped_ts = pd.to_datetime(scraped_time).tz_localize(None) if pd.to_datetime(scraped_time).tzinfo else pd.to_datetime(scraped_time)
+                        ref_ts = pd.to_datetime(ref_time).tz_localize(None) if getattr(ref_time, "tzinfo", None) else pd.to_datetime(ref_time)
                         now_ts = pd.Timestamp.now().tz_localize(None)
-                        days_on_market = max(1, (now_ts - scraped_ts).days)
+                        days_on_market = max(1, (now_ts - ref_ts).days)
+                        date_added_str = ref_ts.strftime("%Y-%m-%d")
                     except Exception:
                         days_on_market = 1
 
-                status = "new" if days_on_market <= 3 else "stable"
+                # Statut : Baisses de prix prioritaires, puis Nouveau (<=7j), puis Stable
+                if price_xpf < init_price_xpf:
+                    status = "price_drop"
+                elif days_on_market <= 7:
+                    status = "new"
+                else:
+                    status = "stable"
+
+                # Date de dernière mise à jour
+                last_change = row.get("last_price_change_at")
+                if pd.notna(last_change):
+                    last_update_date = pd.to_datetime(last_change).strftime("%d/%m/%Y")
+                elif pd.notna(scraped_time):
+                    last_update_date = pd.to_datetime(scraped_time).strftime("%d/%m/%Y")
+                else:
+                    last_update_date = "Aujourd'hui"
+
+                # Chronologie complète et multi-jalons des prix (priceHistory)
+                listing_id_str = str(row.get("id"))
+                raw_hist = history_by_listing.get(listing_id_str, [])
+                price_history = []
+
+                if raw_hist:
+                    for h in raw_hist:
+                        ev_type = str(h.get("event_type") or "").upper()
+                        h_price = safe_int(h.get("price_xpf"), price_xpf)
+                        h_rec = h.get("recorded_at")
+                        h_date = pd.to_datetime(h_rec).strftime("%d/%m/%Y") if pd.notna(h_rec) else "Récemment"
+                        chg_xpf = safe_int(h.get("price_change_xpf"), 0)
+                        chg_pct = safe_float(h.get("price_change_pct"), 0.0)
+
+                        if ev_type == "INITIAL":
+                            lbl = f"{'Loyer initial' if is_location else 'Prix initial'} lors de la publication sur {row.get('source')}"
+                        elif "DROP" in ev_type:
+                            if abs(chg_xpf) >= 1_000_000:
+                                lbl = f"Baisse constatée : {chg_pct:.1f}% (-{abs(chg_xpf)/1e6:.1f}M F)"
+                            else:
+                                lbl = f"Baisse constatée : {chg_pct:.1f}% (-{abs(chg_xpf):,d} F)"
+                        elif "INCREASE" in ev_type:
+                            if abs(chg_xpf) >= 1_000_000:
+                                lbl = f"Hausse constatée : +{abs(chg_pct):.1f}% (+{abs(chg_xpf)/1e6:.1f}M F)"
+                            else:
+                                lbl = f"Hausse constatée : +{abs(chg_pct):.1f}% (+{abs(chg_xpf):,d} F)"
+                        else:
+                            lbl = f"Observation sur {row.get('source')}"
+
+                        price_history.append({
+                            "date": h_date,
+                            "price": h_price,
+                            "label": lbl
+                        })
+
+                    last_h_date = price_history[-1]["date"]
+                    today_fmt = now.strftime("%d/%m/%Y")
+                    if last_h_date != today_fmt and last_h_date != "Aujourd'hui":
+                        price_history.append({
+                            "date": "Aujourd'hui",
+                            "price": price_xpf,
+                            "label": f"{'Loyer actif' if is_location else 'Offre active'} sous veille"
+                        })
+                else:
+                    pub_fmt = pd.to_datetime(ref_time).strftime("%d/%m/%Y") if pd.notna(ref_time) else "Publication"
+                    price_history.append({
+                        "date": pub_fmt,
+                        "price": init_price_xpf,
+                        "label": f"{'Loyer initial' if is_location else 'Prix initial'} sur {row.get('source')}"
+                    })
+                    if price_xpf != init_price_xpf or days_on_market > 1:
+                        price_history.append({
+                            "date": "Aujourd'hui",
+                            "price": price_xpf,
+                            "label": f"{'Loyer actif révisé' if price_xpf != init_price_xpf else ('Loyer actif' if is_location else 'Offre active')} sous veille"
+                        })
 
                 # Détermination de la typologie (Studio, F1, F2, F3, F4, F5+)
                 raw_rooms = safe_int(row.get("rooms"), 0)
@@ -414,8 +513,8 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     "lat": lat_val,
                     "lon": lon_val,
                     "currentPrice": price_xpf,
-                    "initialPrice": price_xpf,
-                    "lastUpdateDate": "Aujourd'hui",
+                    "initialPrice": init_price_xpf,
+                    "lastUpdateDate": last_update_date,
                     "surfaceHabitable": surf_hab,
                     "surfaceTerrain": surf_ter,
                     "surfaceVarangue": surf_var,
@@ -423,7 +522,7 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     "bedrooms": raw_bedrooms if raw_bedrooms > 0 else None,
                     "roomType": room_type,
                     "roomTypeCode": room_type_code,
-                    "dateAdded": now.strftime("%Y-%m-%d"),
+                    "dateAdded": date_added_str,
                     "daysOnMarket": days_on_market,
                     "avgDaysOnMarket": 60,
                     "status": status,
@@ -443,9 +542,7 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     "images": images,
                     "description": desc,
                     "features": features,
-                    "priceHistory": [
-                        {"date": "Aujourd'hui", "price": price_xpf, "label": f"{'Loyer mensuel' if is_location else 'Offre active'} sur {row.get('source')}"}
-                    ],
+                    "priceHistory": price_history,
                     "aiAnalysis": {
                         "verdictTitle": analysis_title,
                         "contextText": analysis_context,
