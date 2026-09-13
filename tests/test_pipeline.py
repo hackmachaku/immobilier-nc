@@ -427,6 +427,125 @@ def test_published_at_and_price_history(tmp_path, cleaner):
         assert round(hist[1][3], 1) == -6.0
 
 
+def test_dock_and_commercial_rental_classification(cleaner):
+    """Vérifie que les docks industriels et locaux avec loyer mensuel sont classés en LOCATION."""
+    # Cas de l'annonce réelle Dock à Numbo
+    raw = RawListing(
+        source="immobilier.nc",
+        source_id="485214",
+        url="https://www.immobilier.nc/details/485214",
+        title="Dock à Nouméa (Numbo)",
+        description="Dock construit en dur, avec une hauteur de 5m70, quatre bureaux et bloc sanitaire, + mezzanine de 130M² pour stockage. Avec parkings.",
+        raw_price="360000 F CFP/mois",
+        raw_surface="488 m²",
+        property_type_declared="Dock",
+        transaction_type_declared="Location",
+    )
+    cleaned = cleaner.clean(raw)
+    assert cleaned is not None
+    assert cleaned.transaction_type == TransactionType.LOCATION
+    assert cleaned.price_xpf == 360_000
+    assert cleaned.surface_habitable_m2 == 488.0
+    assert cleaned.prix_m2_habitable_xpf == round(360_000 / 488.0, 2)
+
+
+def test_sale_with_rental_investment_keywords(cleaner):
+    """Vérifie que les annonces de vente mentionnant la rentabilité locative restent bien en VENTE."""
+    raw = RawListing(
+        source="immobilier.nc",
+        source_id="512398",
+        url="https://test/512398",
+        title="Maison F6 à Nouméa (Baie des citrons)",
+        description="À VENDRE ensemble immobilier exceptionnel. Idéal pour investissement locatif avec possibilité de mise en location saisonnière à forte rentabilité.",
+        raw_price="115 000 000 F CFP",
+        raw_surface="211 m²",
+        property_type_declared="maison",
+        transaction_type_declared="Vente",
+    )
+    cleaned = cleaner.clean(raw)
+    assert cleaned is not None
+    assert cleaned.transaction_type == TransactionType.VENTE
+    assert cleaned.price_xpf == 115_000_000
+
+
+def test_financial_guardrails_thresholds(cleaner):
+    """Vérifie l'application stricte des seuils plancher et plafond financiers calédoniens."""
+    # Prix < 1.5M sans déclaration explicite -> LOCATION obligatoire
+    raw_under_1_5m = RawListing(
+        source="test",
+        source_id="test_under",
+        url="http://test",
+        title="Appartement F2 Pouembout",
+        description="Joli F2 calme",
+        raw_price="65 000 F CFP",
+        raw_surface="40 m²",
+    )
+    cleaned = cleaner.clean(raw_under_1_5m)
+    assert cleaned is not None
+    assert cleaned.transaction_type == TransactionType.LOCATION
+
+    # Prix > 3M sans indication de loyer mensuel -> VENTE obligatoire
+    raw_over_3m = RawListing(
+        source="test",
+        source_id="test_over",
+        url="http://test",
+        title="Terrain Robinson Mont-Dore",
+        description="Beau terrain plat viabilisé",
+        raw_price="18 000 000 F CFP",
+        raw_surface="800 m²",
+    )
+    cleaned = cleaner.clean(raw_over_3m)
+    assert cleaned is not None
+    assert cleaned.transaction_type == TransactionType.VENTE
+
+
+def test_database_upsert_updates_transaction_type(tmp_path, cleaner):
+    """Vérifie que l'upsert DuckDB met bien à jour transaction_type sur conflit d'ID."""
+    test_db_path = tmp_path / "test_upsert_tt.duckdb"
+    db = PropertyDatabase(test_db_path)
+
+    # 1. Insertion erronée initiale en VENTE
+    raw_v1 = RawListing(
+        source="test",
+        source_id="numbo_test",
+        url="http://test/numbo",
+        title="Dock Numbo",
+        description="Grand dock",
+        raw_price="360 000 000 F CFP",
+        raw_surface="488 m²",
+        transaction_type_declared="Vente",
+        property_type_declared="Dock",
+    )
+    c1 = cleaner.clean(raw_v1)
+    db.upsert_listings([c1])
+
+    with db.get_connection() as con:
+        res = con.execute("SELECT transaction_type, price_xpf FROM listings WHERE id = 'test_numbo_test'").fetchone()
+        assert res[0] == "VENTE"
+        assert res[1] == 360_000_000
+
+    # 2. Mise à jour avec la bonne information en LOCATION
+    raw_v2 = RawListing(
+        source="test",
+        source_id="numbo_test",
+        url="http://test/numbo",
+        title="Dock Numbo",
+        description="Grand dock",
+        raw_price="360 000 F CFP/mois",
+        raw_surface="488 m²",
+        transaction_type_declared="Location",
+        property_type_declared="Dock",
+    )
+    c2 = cleaner.clean(raw_v2)
+    db.upsert_listings([c2])
+
+    with db.get_connection() as con:
+        res = con.execute("SELECT transaction_type, price_xpf FROM listings WHERE id = 'test_numbo_test'").fetchone()
+        assert res[0] == "LOCATION"
+        assert res[1] == 360_000
+
+
+
 
 
 

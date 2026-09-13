@@ -202,28 +202,74 @@ class ListingCleaner:
 
         return PropertyType.AUTRE
 
-    def detect_transaction_type(self, declared: Optional[str], title: str, description: str, price: Optional[int]) -> TransactionType:
-        """Détermine s'il s'agit d'une vente ou d'une location."""
+    def detect_transaction_type(
+        self,
+        declared: Optional[str],
+        title: str,
+        description: str,
+        price: Optional[int],
+        raw_price_str: Optional[str] = None,
+    ) -> TransactionType:
+        """
+        Détermine avec précision et robustesse s'il s'agit d'une vente ou d'une location.
+        Intègre des garde-fous financiers absolus adaptés au marché calédonien :
+        - En Nouvelle-Calédonie, aucun bien bâti ou terrain ne se vend à moins de 1 500 000 F CFP.
+          Tout montant inférieur à 1.5M F CFP est systématiquement un loyer mensuel (Location).
+        - Tout bien à plus de 3 000 000 F CFP est une Vente (sauf déclaration explicite de bail commercial).
+        - Les mentions d'investissement locatif ("idéal investisseur", "rentabilité locative", "actuellement loué")
+          dans les annonces de vente ne doivent pas contaminer la détection.
+        """
         dec_lower = (declared or "").strip().lower()
-        if "locat" in dec_lower or "louer" in dec_lower:
-            return TransactionType.LOCATION
+        is_declared_loc = bool("locat" in dec_lower or "louer" in dec_lower)
+        is_declared_vente = bool("vent" in dec_lower or "achat" in dec_lower or "vendre" in dec_lower)
 
+        price_text = f"{raw_price_str or ''} {title} {description}".lower()
+        has_mois_in_price = bool(re.search(r"(?:/mois|par\s*mois|f/mois|f\s*cfp/mois)", price_text))
+
+        # 1. RÈGLES FINANCIÈRES ABSOLUES (GARDE-FOUS DU MARCHÉ CALÉDONIEN)
+        if price is not None:
+            # Sous 1.5M F CFP, il est matériellement impossible qu'il s'agisse d'une vente immobilière
+            # (un dock à 360 000 F, un F2 à 65 000 F, ou un local à 164 550 F sont des loyers mensuels)
+            if price < 1_500_000:
+                return TransactionType.LOCATION
+
+            # Au-dessus de 3 000 000 F CFP, c'est presque toujours une vente.
+            # Seuls de rares baux commerciaux de complexes entiers dépassent ce montant avec indication de loyer mensuel.
+            if price >= 3_000_000 and not (is_declared_loc and has_mois_in_price):
+                return TransactionType.VENTE
+
+        # 2. PRISE EN COMPTE DU STATUT DÉCLARÉ PAR LA SOURCE (SI COHÉRENT AVEC LE PRIX)
+        if is_declared_loc and not is_declared_vente:
+            if price is None or price < 3_000_000:
+                return TransactionType.LOCATION
+        if is_declared_vente and not is_declared_loc:
+            if price is None or price >= 1_500_000:
+                return TransactionType.VENTE
+
+        # 3. ANALYSE SÉMANTIQUE DU TITRE ET DE LA DESCRIPTION
         blob = f"{title} {description}".lower()
-        has_loc = bool(re.search(r"\b(louer|location|loyer|mensuel|charges comprises|f/mois|par mois)\b", blob))
-        has_vente = bool(re.search(r"\b(vente|vendre|acheter|achat|acquerir|prix fai)\b", blob))
+
+        # Neutralisation des expressions d'investissement locatif dans les ventes
+        blob_clean = re.sub(
+            r"\b(id[ée]al\s*(?:pour\s*)?investiss(?:eur|ement)|rentabilit[ée]\s*locative|rapport\s*locatif|actuellement\s*lou[ée]|vendu\s*lou[ée]|possibilit[ée]\s*de\s*location)\b",
+            " ",
+            blob
+        )
+
+        has_loc = bool(re.search(r"\b(louer|location|loyer|mensuel|charges comprises|f/mois|par mois|bail commercial)\b", blob_clean)) or has_mois_in_price
+        has_vente = bool(re.search(r"\b(vente|vendre|acheter|achat|acquerir|prix fai|fai inclus)\b", blob_clean))
 
         if has_loc and not has_vente:
             return TransactionType.LOCATION
         if has_vente and not has_loc:
             return TransactionType.VENTE
-        if has_loc:
-            return TransactionType.LOCATION
 
-        # Règle heuristique par le prix si indéterminé
+        # 4. ARBITRAGE FINAL PAR LE PRIX SI INDÉTERMINÉ
         if price is not None:
-            if price < 1_500_000:  # En XPF, sous 1.5M F CFP c'est quasiment toujours un loyer mensuel
+            if price < 1_500_000:
                 return TransactionType.LOCATION
-            return TransactionType.VENTE
+            else:
+                return TransactionType.VENTE
 
         return TransactionType.VENTE
 
@@ -274,9 +320,14 @@ class ListingCleaner:
         surface_hab, surface_terrain, surface_terrasse = self.parse_surface(
             raw.raw_surface, f"{raw.title} {raw.description}"
         )
-
         prop_type = self.detect_property_type(raw.property_type_declared, raw.title, raw.description or "")
-        trans_type = self.detect_transaction_type(raw.transaction_type_declared, raw.title, raw.description or "", price)
+        trans_type = self.detect_transaction_type(
+            raw.transaction_type_declared,
+            raw.title,
+            raw.description or "",
+            price,
+            raw_price_str=raw.raw_price,
+        )
 
         # Les biens non résidentiels (terrains, docks, locaux professionnels) n'ont pas de pièces d'habitation
         if prop_type in (PropertyType.TERRAIN, PropertyType.DOCK, PropertyType.LOCAL_COMMERCIAL, PropertyType.IMMEUBLE):
