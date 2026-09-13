@@ -394,18 +394,14 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                         chg_xpf = safe_int(h.get("price_change_xpf"), 0)
                         chg_pct = safe_float(h.get("price_change_pct"), 0.0)
 
+                        chg_str = f"{abs(chg_xpf)/1e6:.1f}M F" if abs(chg_xpf) >= 1_000_000 else f"{abs(chg_xpf):_d} F".replace("_", " ")
+
                         if ev_type == "INITIAL":
                             lbl = f"{'Loyer initial' if is_location else 'Prix initial'} lors de la publication sur {row.get('source')}"
                         elif "DROP" in ev_type:
-                            if abs(chg_xpf) >= 1_000_000:
-                                lbl = f"Baisse constatée : {chg_pct:.1f}% (-{abs(chg_xpf)/1e6:.1f}M F)"
-                            else:
-                                lbl = f"Baisse constatée : {chg_pct:.1f}% (-{abs(chg_xpf):,d} F)"
+                            lbl = f"Baisse constatée : {chg_pct:.1f}% (-{chg_str})"
                         elif "INCREASE" in ev_type:
-                            if abs(chg_xpf) >= 1_000_000:
-                                lbl = f"Hausse constatée : +{abs(chg_pct):.1f}% (+{abs(chg_xpf)/1e6:.1f}M F)"
-                            else:
-                                lbl = f"Hausse constatée : +{abs(chg_pct):.1f}% (+{abs(chg_xpf):,d} F)"
+                            lbl = f"Hausse constatée : +{abs(chg_pct):.1f}% (+{chg_str})"
                         else:
                             lbl = f"Observation sur {row.get('source')}"
 
@@ -415,14 +411,27 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                             "label": lbl
                         })
 
-                    last_h_date = price_history[-1]["date"]
-                    today_fmt = now.strftime("%d/%m/%Y")
-                    if last_h_date != today_fmt and last_h_date != "Aujourd'hui":
-                        price_history.append({
-                            "date": "Aujourd'hui",
-                            "price": price_xpf,
-                            "label": f"{'Loyer actif' if is_location else 'Offre active'} sous veille"
-                        })
+                    # Éviter les doublons de prix identiques dans la chronologie
+                    if len(price_history) == 1:
+                        # Si un seul événement initial, indiquer que l'offre est toujours active et stable
+                        last_h_date = price_history[-1]["date"]
+                        today_fmt = now.strftime("%d/%m/%Y")
+                        if last_h_date != today_fmt and last_h_date != "Aujourd'hui":
+                            price_history.append({
+                                "date": "Aujourd'hui",
+                                "price": price_xpf,
+                                "label": f"{'Loyer actif' if is_location else 'Offre active'} stable sous veille"
+                            })
+                    else:
+                        # Si le dernier événement a déjà le prix actuel, on indique qu'il est en vigueur
+                        if price_history[-1]["price"] == price_xpf:
+                            price_history[-1]["label"] += " • Offre en vigueur"
+                        else:
+                            price_history.append({
+                                "date": "Aujourd'hui",
+                                "price": price_xpf,
+                                "label": f"{'Loyer actif' if is_location else 'Offre active'} sous veille"
+                            })
                 else:
                     pub_fmt = pd.to_datetime(ref_time).strftime("%d/%m/%Y") if pd.notna(ref_time) else "Publication"
                     price_history.append({
