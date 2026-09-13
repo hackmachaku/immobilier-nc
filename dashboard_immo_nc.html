@@ -2181,8 +2181,8 @@
         const dropPercent = item.initialPrice > 0 ? Math.round((dropAmount / item.initialPrice) * 100) : 0;
 
         const transBadge = isLoc 
-          ? `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1">🔑 Location</span>`
-          : `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">🏡 Vente</span>`;
+          ? `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-500/25 text-indigo-200 border border-indigo-500/40 flex items-center gap-1 backdrop-blur-md shadow-sm">🔑 Location</span>`
+          : `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/25 text-emerald-200 border border-emerald-500/40 flex items-center gap-1 backdrop-blur-md shadow-sm">🏡 Vente</span>`;
 
         const dropDisplay = dropAmount >= 1000000
           ? `-${(dropAmount/1000000).toFixed(1)}M`
@@ -2190,39 +2190,43 @@
 
         let badgeHtml = '';
         if (item.isManual) {
-          badgeHtml = `<span class="px-2.5 py-1 text-xs font-semibold rounded-full badge-manual flex items-center gap-1">✍️ Saisie Manuelle</span>`;
+          badgeHtml = `<span class="px-2.5 py-0.5 text-[11px] font-bold rounded-lg badge-manual flex items-center gap-1 shadow-md whitespace-nowrap backdrop-blur-md">✍️ Manuel</span>`;
         } else if (item.status === 'new') {
-          badgeHtml = `<span class="px-2.5 py-1 text-xs font-semibold rounded-full badge-new flex items-center gap-1">🟢 Nouveau (${item.daysOnMarket}j)</span>`;
+          badgeHtml = `<span class="px-2.5 py-0.5 text-[11px] font-bold rounded-lg badge-new flex items-center gap-1 shadow-md whitespace-nowrap backdrop-blur-md">🟢 Nouveau</span>`;
         } else if (item.status === 'price_drop') {
-          badgeHtml = `<span class="px-2.5 py-1 text-xs font-semibold rounded-full badge-down flex items-center gap-1">📉 -${dropPercent}% (${dropDisplay})</span>`;
+          badgeHtml = `
+            <span class="px-2.5 py-0.5 text-[11px] font-black rounded-lg badge-down flex items-center gap-1 shadow-md whitespace-nowrap backdrop-blur-md" title="Baisse constatée : -${dropPercent}% (${dropDisplay})">
+              <span>📉 -${dropPercent}%</span>
+              <span class="text-[10px] font-semibold opacity-90 tracking-tight">(${dropDisplay})</span>
+            </span>`;
         } else {
-          badgeHtml = `<span class="px-2.5 py-1 text-xs font-medium rounded-full bg-slate-800 text-slate-300 border border-slate-700">⚖️ Stable</span>`;
+          badgeHtml = `<span class="px-2.5 py-0.5 text-[11px] font-medium rounded-lg bg-slate-900/80 text-slate-300 border border-slate-700/80 shadow-md whitespace-nowrap backdrop-blur-md">⚖️ Stable</span>`;
         }
 
         let categoryTag = '';
         if (item.category === 'dock_industriel') {
-          categoryTag = `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/15 text-amber-400 border border-amber-500/30">🏭 Dock Industriel</span>`;
+          categoryTag = `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 backdrop-blur-md">🏭 Dock</span>`;
         } else if (item.category === 'maison_riviere_mer') {
-          categoryTag = `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">🌊 Rivière & Mer</span>`;
+          categoryTag = `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 backdrop-blur-md">🌊 Rivière & Mer</span>`;
         } else if (item.category === 'appartement') {
-          categoryTag = `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30">🏢 Appartement</span>`;
+          categoryTag = `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30 backdrop-blur-md">🏢 Appartement</span>`;
         } else {
-          categoryTag = `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">🏡 Maison & Villa</span>`;
+          categoryTag = `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 backdrop-blur-md">🏡 Maison & Villa</span>`;
         }
 
         const ageColor = item.daysOnMarket <= 7 
-          ? "bg-emerald-950/80 text-emerald-300 border-emerald-500/30"
-          : (item.daysOnMarket > 45 ? "bg-amber-950/80 text-amber-300 border-amber-500/30" : "bg-slate-900/80 text-slate-300 border-slate-700");
+          ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/40"
+          : (item.daysOnMarket > 45 ? "bg-amber-950/90 text-amber-300 border-amber-500/40" : "bg-slate-900/90 text-slate-300 border-slate-700/80");
 
         const roomBadge = item.roomType 
-          ? `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 shadow-sm">🛋️ ${item.roomType}</span>`
+          ? `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/25 text-amber-300 border border-amber-500/40 flex items-center gap-1 shadow-sm backdrop-blur-md">🛋️ ${item.roomType}</span>`
           : '';
 
         let furnishedBadge = '';
         if (item.isFurnished === true) {
-          furnishedBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-teal-500/25 text-teal-300 border border-teal-500/40 flex items-center gap-1 shadow-sm">🛋️ Meublé</span>`;
+          furnishedBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-teal-500/30 text-teal-200 border border-teal-500/40 flex items-center gap-1 shadow-sm backdrop-blur-md">🛋️ Meublé</span>`;
         } else if (item.isFurnished === false && isLoc) {
-          furnishedBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1">🚪 Non meublé</span>`;
+          furnishedBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-900/80 text-slate-300 border border-slate-700/80 flex items-center gap-1 backdrop-blur-md">🚪 Non meublé</span>`;
         }
 
         let aiVerdictCard = '';
@@ -2255,27 +2259,35 @@
             <!-- IMAGE & BADGES -->
             <div class="relative h-52 overflow-hidden cursor-pointer" onclick="openDetailModal('${item.id}')">
               <img src="${item.image}" alt="${item.title}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
-              <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-transparent to-black/30"></div>
+              <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-transparent to-black/35"></div>
               
-              <div class="absolute top-3 left-3 flex gap-2 flex-wrap">
-                ${transBadge}
-                ${categoryTag}
-                ${roomBadge}
-                ${furnishedBadge}
-                <span class="px-2 py-0.5 rounded text-[10px] font-semibold border ${ageColor} flex items-center gap-1">
-                  ⏱️ ${item.daysOnMarket}j en ligne
-                </span>
-              </div>
-              <div class="absolute top-3 right-3">
-                ${badgeHtml}
+              <!-- EN-TÊTE UNIFIÉ DES BADGES (FLUIDE ET SANS SUPERPOSITION) -->
+              <div class="absolute top-2.5 left-2.5 right-2.5 flex items-start justify-between gap-1.5 pointer-events-none z-10">
+                <!-- Badges descriptifs : retour à la ligne automatique et borné -->
+                <div class="flex flex-wrap items-center gap-1.5 flex-1 min-w-0 pointer-events-auto">
+                  ${transBadge}
+                  ${categoryTag}
+                  ${roomBadge}
+                  ${furnishedBadge}
+                </div>
+                <!-- Badge prix / statut : ancré à droite, largeur maîtrisée -->
+                <div class="shrink-0 pointer-events-auto ml-1">
+                  ${badgeHtml}
+                </div>
               </div>
 
-              <div class="absolute bottom-3 left-3 right-3 text-white">
-                <div class="text-xs text-slate-300 flex items-center gap-1">
-                  <svg class="w-3.5 h-3.5 text-sky-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>
-                  <span>${item.commune} • ${item.quartier}</span>
+              <!-- BAS DE PHOTO : LOCALISATION & FRAÎCHEUR DE L'OFFRE -->
+              <div class="absolute bottom-2.5 left-2.5 right-2.5 text-white pointer-events-none z-10">
+                <div class="flex items-center justify-between gap-2 text-xs text-slate-300">
+                  <div class="flex items-center gap-1 truncate pointer-events-auto">
+                    <svg class="w-3.5 h-3.5 text-sky-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>
+                    <span class="font-medium truncate">${item.commune} • ${item.quartier}</span>
+                  </div>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold border ${ageColor} shrink-0 backdrop-blur-md shadow-md pointer-events-auto">
+                    ⏱️ ${item.daysOnMarket}j
+                  </span>
                 </div>
-                <h3 class="font-bold text-base line-clamp-1 mt-0.5">${item.title}</h3>
+                <h3 class="font-bold text-base line-clamp-1 mt-1 text-white drop-shadow-md pointer-events-auto">${item.title}</h3>
               </div>
             </div>
 
