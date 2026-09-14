@@ -8,6 +8,10 @@
   <!-- Leaflet CSS & JS pour la carte interactive -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Leaflet MarkerCluster CSS & JS pour fluidité 60 FPS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <style>
     :root {
       --background: #0b1329;
@@ -60,6 +64,56 @@
     }
     .leaflet-container {
       font-family: inherit !important;
+    }
+    /* Cluster Badges pour fluidité 60 FPS */
+    .custom-cluster-icon {
+      background: transparent !important;
+      border: none !important;
+    }
+    .custom-cluster-badge {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      cursor: pointer;
+    }
+    .custom-cluster-badge:hover {
+      transform: scale(1.15);
+    }
+    .cluster-small {
+      background: rgba(14, 165, 233, 0.9);
+      color: #ffffff;
+      border: 2px solid #38bdf8;
+    }
+    .cluster-medium {
+      background: rgba(139, 92, 246, 0.9);
+      color: #ffffff;
+      border: 2px solid #c084fc;
+    }
+    .cluster-large {
+      background: rgba(245, 158, 11, 0.95);
+      color: #ffffff;
+      border: 2px solid #fbbf24;
+    }
+    /* Tooltip Parcelle Cadastrale Éclatante */
+    .parcel-tooltip {
+      background: #0f172a !important;
+      color: #fbbf24 !important;
+      border: 1px solid #f59e0b !important;
+      border-radius: 6px !important;
+      font-size: 11px !important;
+      font-weight: 700 !important;
+      padding: 3px 8px !important;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5) !important;
+    }
+    .parcel-tooltip::before {
+      border-top-color: #f59e0b !important;
     }
     #detailModal, #manualModal, #addSourceModal {
       z-index: 99999 !important;
@@ -2351,6 +2405,29 @@
                   </div>
                   <div class="text-slate-300 font-medium">${item.priceM2 ? Math.round(item.priceM2).toLocaleString('fr-FR') + (isLoc ? ' F/m²/mois' : ' F/m²') : ''}</div>
                 </div>
+
+                <!-- CADASTRE & REFIL BADGE BLOCK -->
+                ${item.cadastreNic || item.refilNom ? `
+                  <div class="mt-2.5 pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-1 text-[10.5px]">
+                    ${item.cadastreNic ? `
+                      <span class="inline-flex items-center gap-1 font-mono text-emerald-300 bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-800/40" title="Numéro d'Identification Cadastrale officiel : ${item.cadastreNic}${item.cadastreLot ? ' • Lot ' + item.cadastreLot : ''}">
+                        🏛️ NIC ${item.cadastreNic}${item.cadastreLot ? ' • Lot ' + item.cadastreLot : ''}
+                      </span>
+                    ` : ''}
+                    ${item.refilNom ? `
+                      <span class="inline-flex items-center gap-1 text-indigo-300 bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-800/40 max-w-[170px] truncate" title="Résidence officielle REFIL : ${item.refilNom} (${item.refilAdresse || ''})">
+                        🏢 ${item.refilNom}${item.refilLivraison ? ' (' + item.refilLivraison + ')' : ''}
+                      </span>
+                    ` : ''}
+                  </div>
+                ` : ''}
+
+                <!-- DIAGNOSTIC SURFACE CADASTRE -->
+                ${item.surfaceEcartStatus && item.surfaceEcartStatus !== 'NON_EVALUABLE' ? `
+                  <div class="mt-1.5 text-[10px] ${item.surfaceEcartStatus === 'CONFORME' ? 'text-emerald-400 bg-emerald-950/30 border-emerald-800/30' : (item.surfaceEcartStatus === 'COPROPRIETE' ? 'text-slate-400 bg-slate-900/40 border-slate-800' : (item.surfaceEcartStatus === 'ECART_MINEUR' ? 'text-sky-300 bg-sky-950/30 border-sky-800/30' : 'text-amber-300 bg-amber-950/30 border-amber-800/30'))} px-2 py-0.5 rounded border flex items-center justify-between">
+                    <span class="truncate">${item.surfaceEcartLabel || ''}</span>
+                  </div>
+                ` : ''}
               </div>
 
               <!-- ACTIONS AVEC BOUTON 'SIMULER' + 'DÉTAILS & IA' -->
@@ -2693,6 +2770,108 @@
             <p class="text-xs sm:text-sm text-slate-300 leading-relaxed bg-slate-900/50 p-4 rounded-xl border border-slate-800 whitespace-pre-line">${item.description}</p>
           </div>
 
+          <!-- BLOC FONCIER, CADASTRE & URBANISME OFFICIEL (GOUV NC) -->
+          <div class="p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border border-emerald-500/30 space-y-4 shadow-lg">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-emerald-900/40">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-base shadow-inner">
+                  🏛️
+                </div>
+                <div>
+                  <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                    Foncier, Cadastre & Urbanisme Officiel
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Gouv NC</span>
+                  </h4>
+                  <p class="text-[11px] text-slate-400">Données issues de la DITTT, cadastre.gouv.nc et de l'Open Data Nouvelle-Calédonie</p>
+                </div>
+              </div>
+              ${item.cadastreNic ? `
+                <span class="font-mono text-xs font-bold text-emerald-300 bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-700/50">
+                  NIC : ${item.cadastreNic}
+                </span>
+              ` : `
+                <span class="text-xs text-slate-400 bg-slate-800 px-2.5 py-1 rounded-lg">Non cadastrable</span>
+              `}
+            </div>
+
+            <!-- TUILES CADASTRE ET REFIL -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span class="text-[10px] text-slate-400 block font-medium">Référence Cadastrale</span>
+                <span class="font-bold text-white text-sm block mt-0.5">${item.cadastreLot ? 'Lot N° ' + item.cadastreLot : 'Parcelle active'}</span>
+                <span class="text-[10px] text-emerald-400 block mt-0.5 truncate">${item.cadastreLotissement || item.cadastreSection || 'Section non nommée'}</span>
+              </div>
+
+              <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span class="text-[10px] text-slate-400 block font-medium">Contenance Légale (Acte)</span>
+                <span class="font-bold text-white text-sm block mt-0.5">${item.cadastreContenance || (item.cadastreSurfaceM2 ? item.cadastreSurfaceM2.toLocaleString('fr-FR') + ' m²' : 'N/C')}</span>
+                <span class="text-[10px] text-slate-400 block mt-0.5">${item.cadastreSurfaceM2 ? '~ ' + Math.round(item.cadastreSurfaceM2).toLocaleString('fr-FR') + ' m² SIG' : 'Surface acte officiel'}</span>
+              </div>
+
+              <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span class="text-[10px] text-slate-400 block font-medium">Commune & Section</span>
+                <span class="font-bold text-white text-sm block mt-0.5">${item.cadastreCommune || item.commune}</span>
+                <span class="text-[10px] text-sky-400 block mt-0.5">${item.cadastreSection || item.quartier}</span>
+              </div>
+
+              <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span class="text-[10px] text-slate-400 block font-medium">Typologie Foncière</span>
+                <span class="font-bold text-white text-sm block mt-0.5">${item.cadastreTypologie || 'Propriété Privée'}</span>
+                <span class="text-[10px] text-indigo-300 block mt-0.5">Régime Foncier NC</span>
+              </div>
+            </div>
+
+            <!-- DIAGNOSTIC DE SURFACE & COHÉRENCE -->
+            ${item.surfaceEcartLabel ? `
+              <div class="p-3 rounded-xl ${item.surfaceEcartStatus === 'CONFORME' ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300' : (item.surfaceEcartStatus === 'COPROPRIETE' ? 'bg-slate-900/60 border-slate-700/60 text-slate-300' : (item.surfaceEcartStatus === 'ECART_MINEUR' ? 'bg-sky-950/30 border-sky-500/30 text-sky-300' : 'bg-amber-950/30 border-amber-500/30 text-amber-300'))} border flex items-center justify-between text-xs flex-wrap gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="font-bold">${item.surfaceEcartLabel}</span>
+                </div>
+                ${item.surfaceEcartPct !== null ? `
+                  <span class="px-2 py-0.5 rounded text-[11px] font-bold ${item.surfaceEcartStatus === 'CONFORME' ? 'bg-emerald-500/20 text-emerald-200' : 'bg-amber-500/20 text-amber-200'}">
+                    Écart : ${item.surfaceEcartPct > 0 ? '+' : ''}${item.surfaceEcartPct}% (${item.surfaceEcartM2 > 0 ? '+' : ''}${item.surfaceEcartM2} m²)
+                  </span>
+                ` : ''}
+              </div>
+            ` : ''}
+
+            <!-- REFIL : INFORMATIONS IMMEUBLE & COPROPRIÉTÉ -->
+            ${item.refilNom ? `
+              <div class="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/30 space-y-2">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="font-bold text-indigo-300 flex items-center gap-1.5">
+                    🏢 Immeuble Répertorié REFIL : ${item.refilNom}
+                  </span>
+                  <span class="text-[11px] text-indigo-200 bg-indigo-900/50 px-2 py-0.5 rounded">
+                    ${item.refilType || 'Copropriété'}
+                  </span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-300">
+                  <div><strong>Adresse :</strong> ${item.refilAdresse || item.quartier}</div>
+                  <div><strong>Construction / Livraison :</strong> ${item.refilLivraison ? 'Année ' + item.refilLivraison : 'Référencée REFIL'}</div>
+                  <div><strong>Gestion :</strong> ${item.refilGestion || 'Copropriété privée'}</div>
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- URBANISME PUD INTERACTIF -->
+            <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-slate-200 flex items-center gap-1.5">
+                  📐 Urbanisme PUD (Plan d'Urbanisme Directeur)
+                </span>
+                <button onclick="loadPudDetailsForListing('${item.id}', '${item.commune}', '${item.quartier}', ${item.lat}, ${item.lon})" id="btnPud_${item.id}" class="text-[11px] font-semibold text-sky-400 hover:text-sky-300 hover:underline inline-flex items-center gap-1">
+                  <span>Consulter les règles de zone</span>
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+              </div>
+              <div id="pudDetails_${item.id}" class="hidden pt-2 border-t border-slate-800 space-y-1.5 text-[11px] text-slate-300">
+                <!-- Rempli dynamiquement -->
+              </div>
+            </div>
+
+          </div>
+
           <!-- CONTACT & ACTIONS DIRECTES -->
           <div class="p-5 rounded-2xl bg-slate-900 border border-sky-500/30">
             <h4 class="text-xs font-semibold text-sky-400 uppercase tracking-wider mb-2">Coordonnées de l'Annonce</h4>
@@ -2735,6 +2914,51 @@
       if (photos.length > 1) {
         modalCarouselTimer = setInterval(nextModalPhoto, 3500);
       }
+    }
+
+    function loadPudDetailsForListing(id, commune, quartier, lat, lon) {
+      const container = document.getElementById('pudDetails_' + id);
+      const btn = document.getElementById('btnPud_' + id);
+      if (!container) return;
+
+      if (!container.classList.contains('hidden')) {
+        container.classList.add('hidden');
+        if (btn) btn.innerHTML = `<span>Consulter les règles de zone</span><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>`;
+        return;
+      }
+
+      container.classList.remove('hidden');
+      container.innerHTML = `<span class="text-sky-400 font-medium animate-pulse">Chargement des règles d'urbanisme officielles...</span>`;
+
+      fetch(`/api/cadastre/pud-rules?lat=${lat}&lon=${lon}&commune=${encodeURIComponent(commune || '')}&quartier=${encodeURIComponent(quartier || '')}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.pud) {
+            const p = data.pud;
+            container.innerHTML = `
+              <div class="p-3 rounded-lg bg-slate-950/80 border border-sky-900/40 space-y-2">
+                <div class="flex items-center justify-between text-sky-300 font-bold">
+                  <span>${p.zoneLabel || p.zone}</span>
+                  <span class="text-[10px] text-slate-400 font-normal">${p.source || 'PUD Officiel'}</span>
+                </div>
+                <p class="text-slate-300">${p.vocation || ''}</p>
+                <div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-800/60 text-slate-400">
+                  <div><strong>Hauteur max :</strong> <span class="text-white">${p.hauteurMax || 'R+1'}</span></div>
+                  <div><strong>Emprise au sol :</strong> <span class="text-white">${p.empriseSol || '30%'}</span></div>
+                </div>
+                <div class="text-[10.5px] text-emerald-400 pt-1 border-t border-slate-800/40">
+                  <strong>Droits à bâtir :</strong> ${p.droitsBatir || 'Règlementation communale en vigueur'}
+                </div>
+              </div>
+            `;
+            if (btn) btn.innerHTML = `<span>Masquer les règles</span><svg class="w-3 h-3 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>`;
+          } else {
+            container.innerHTML = `<span class="text-slate-400">Règlementation communale standard en vigueur.</span>`;
+          }
+        })
+        .catch(err => {
+          container.innerHTML = `<span class="text-slate-400">Règlementation d'urbanisme applicable selon le PUD communal.</span>`;
+        });
     }
 
     function closeDetailModal() {
@@ -3141,16 +3365,102 @@
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(leafletMapInstance);
 
-      mapMarkersGroup = L.layerGroup().addTo(leafletMapInstance);
+      if (typeof L.markerClusterGroup === 'function') {
+        mapMarkersGroup = L.markerClusterGroup({
+          chunkedLoading: true,
+          chunkProgress: false,
+          maxClusterRadius: 42,
+          spiderfyOnMaxZoom: true,
+          showCoverageOnHover: false,
+          zoomToBoundsOnClick: true,
+          iconCreateFunction: function(cluster) {
+            const count = cluster.getChildCount();
+            let cClass = 'cluster-small';
+            if (count >= 50) cClass = 'cluster-large';
+            else if (count >= 20) cClass = 'cluster-medium';
+            return L.divIcon({
+              html: `<div class="custom-cluster-badge ${cClass}"><span>${count}</span></div>`,
+              className: 'custom-cluster-icon',
+              iconSize: L.point(36, 36)
+            });
+          }
+        }).addTo(leafletMapInstance);
+      } else {
+        mapMarkersGroup = L.layerGroup().addTo(leafletMapInstance);
+      }
       mapQuartiersGroup = L.layerGroup().addTo(leafletMapInstance);
 
       updateMapLegend();
       renderMapMarkers();
     }
 
+    let currentParcelPolygonLayer = null;
+
+    function clearCadastreParcelPolygon() {
+      if (currentParcelPolygonLayer && leafletMapInstance) {
+        leafletMapInstance.removeLayer(currentParcelPolygonLayer);
+        currentParcelPolygonLayer = null;
+      }
+    }
+
+    function showCadastreParcelPolygon(lat, lon) {
+      clearCadastreParcelPolygon();
+      if (!lat || !lon || !leafletMapInstance) return;
+
+      fetch(`/api/cadastre/parcel-polygon?lat=${lat}&lon=${lon}`)
+        .then(res => {
+          if (!res.ok) return null;
+          return res.json();
+        })
+        .then(data => {
+          if (!data || !data.polygon) return;
+          const hasCoords = (data.polygon.geometry && data.polygon.geometry.coordinates) || data.polygon.coordinates;
+          if (!hasCoords) return;
+          clearCadastreParcelPolygon();
+
+          // Style ambre or éclatant à fort contraste (démarquation nette du fond de carte OSM)
+          currentParcelPolygonLayer = L.geoJSON(data.polygon, {
+            style: {
+              color: '#f59e0b',
+              weight: 3.5,
+              opacity: 1.0,
+              fillColor: '#fbbf24',
+              fillOpacity: 0.35
+            }
+          });
+
+          // Infobulle / étiquette sur la parcelle
+          const lotLabel = data.lot ? `Lot ${data.lot}` : (data.nic ? `NIC ${data.nic}` : 'Parcelle');
+          const surfLabel = data.surfaceM2 ? ` • ${data.surfaceM2.toLocaleString('fr-FR')} m²` : '';
+          currentParcelPolygonLayer.bindTooltip(`🏛️ Parcelle Cadastrale : ${lotLabel}${surfLabel}`, {
+            permanent: false,
+            direction: 'top',
+            className: 'parcel-tooltip'
+          });
+
+          currentParcelPolygonLayer.addTo(leafletMapInstance);
+
+          // Zoom et centrage automatique précis sur la parcelle pour isoler le terrain
+          try {
+            const bounds = currentParcelPolygonLayer.getBounds();
+            if (bounds && bounds.isValid()) {
+              leafletMapInstance.flyToBounds(bounds, {
+                padding: [100, 100],
+                maxZoom: 18,
+                duration: 0.6
+              });
+            }
+          } catch(e) {
+            console.debug('FlyToBounds notice:', e);
+          }
+        })
+        .catch(err => console.debug('Polygon fetch notice:', err));
+    }
+
     function renderMapMarkers() {
       if (!leafletMapInstance || !mapMarkersGroup) return;
 
+      clearCadastreParcelPolygon();
       mapMarkersGroup.clearLayers();
       mapQuartiersGroup.clearLayers();
 
@@ -3241,6 +3551,28 @@
                 <span>~${priceEur}</span>
               </div>
             </div>
+            ${item.cadastre_nic ? `
+              <div style="font-size: 10px; color: #38bdf8; background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(14, 165, 233, 0.3); border-radius: 6px; padding: 4px 6px; margin-bottom: 6px;">
+                <div style="font-weight: 700; display: flex; align-items: center; gap: 4px;">
+                  <span>🏛️ Cadastre : NIC ${item.cadastre_nic}</span>
+                </div>
+                <div style="font-size: 9.5px; color: #94a3b8; display: flex; justify-content: space-between; margin-top: 1px;">
+                  <span>${item.cadastre_lot ? 'Lot ' + item.cadastre_lot : (item.cadastre_section ? 'Sect. ' + item.cadastre_section : '')}</span>
+                  <span>${item.cadastre_contenance_m2 ? item.cadastre_contenance_m2.toLocaleString('fr-FR') + ' m² officiels' : ''}</span>
+                </div>
+              </div>
+            ` : ''}
+            ${item.refil_residence ? `
+              <div style="font-size: 10px; color: #c084fc; background: rgba(139, 92, 246, 0.12); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 6px; padding: 4px 6px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">🏢 ${item.refil_residence}</span>
+                <span style="font-size: 9.5px; color: #cbd5e1; margin-left: 4px;">${item.refil_annee_construction || ''}</span>
+              </div>
+            ` : ''}
+            ${(item.surface_discrepancy && item.surface_discrepancy.status !== 'NOT_APPLICABLE') ? `
+              <div style="font-size: 9.5px; padding: 2px 6px; border-radius: 4px; margin-bottom: 6px; background: ${item.surface_discrepancy.status === 'ALERT' ? 'rgba(239, 68, 68, 0.15)' : (item.surface_discrepancy.status === 'OK' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(51, 65, 85, 0.4)')}; color: ${item.surface_discrepancy.status === 'ALERT' ? '#f87171' : (item.surface_discrepancy.status === 'OK' ? '#34d399' : '#94a3b8')}; border: 1px solid ${item.surface_discrepancy.status === 'ALERT' ? 'rgba(239, 68, 68, 0.3)' : (item.surface_discrepancy.status === 'OK' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(71, 85, 105, 0.3)')};">
+                ${item.surface_discrepancy.label}
+              </div>
+            ` : ''}
             <div style="font-size: 10px; color: #64748b; margin-bottom: 8px; display: flex; justify-content: space-between;">
               <span>🏢 ${item.agencyName || item.source || 'Agence NC'}</span>
               <span>Source : ${item.source || 'Immo NC'}</span>
@@ -3261,6 +3593,12 @@
         });
 
         marker.bindPopup(popupHtml, { maxWidth: 280, className: 'custom-immo-popup' });
+        marker.on('popupopen', () => {
+          showCadastreParcelPolygon(item.lat, item.lon);
+        });
+        marker.on('popupclose', () => {
+          clearCadastreParcelPolygon();
+        });
         marker.addTo(mapMarkersGroup);
       });
 

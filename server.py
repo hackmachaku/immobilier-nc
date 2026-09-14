@@ -20,10 +20,128 @@ from src.ingestion.live_scraper import LiveNCScraper
 from src.utils.logger import get_logger, DEFAULT_LOG_FILE
 from src.utils.log_analyzer import PipelineAuditor
 from src.domain.agencies_directory import NC_AGENCIES
+from src.analysis.cadastre_enrichment import enrich_listings
+import ssl
+import urllib.request
 
 logger = get_logger("server")
 
 PORT = 8080
+
+PARCEL_POLYGON_CACHE: Dict[str, Any] = {}
+
+
+def determine_pud_zone(commune: str, quartier: str, lat: float = 0.0, lon: float = 0.0) -> Dict[str, Any]:
+    """
+    Détermine la zone PUD officielle et les règles d'urbanisme applicables
+    pour une localisation en Nouvelle-Calédonie (Grand Nouméa et Brousse).
+    """
+    c_norm = (commune or "Nouméa").strip().lower()
+    q_norm = (quartier or "").strip().lower()
+
+    if "noum" in c_norm:
+        if any(w in q_norm for w in ["centre", "moselle", "artillerie", "victoire"]):
+            return {
+                "zone": "UA",
+                "zoneLabel": "Zone UA • Centre-Ville Historique",
+                "vocation": "Mixité urbaine dense, commerces, bureaux et logements collectifs",
+                "hauteurMax": "R+6 à R+10 (jusqu'à 32 m)",
+                "empriseSol": "80% à 100%",
+                "droitsBatir": "Forte constructibilité en hauteur, pas de retrait obligatoire sur rue",
+                "source": "PUD Nouméa Ville Approuvé"
+            }
+        elif any(w in q_norm for w in ["baie des citrons", "anse vata", "val plaisance", "trianon", "motor pool", "magenta", "faubourg"]):
+            return {
+                "zone": "UB",
+                "zoneLabel": "Zone UB • Faubourgs Résidentiels Denses & Balnéaires",
+                "vocation": "Habitat collectif intermédiaire, résidences de standing et villas",
+                "hauteurMax": "R+3 / R+4 (12 m à 15 m)",
+                "empriseSol": "45% à 50%",
+                "droitsBatir": "Piscine autorisée, surélévation possible, recul de 3m à 5m des limites séparatives",
+                "source": "PUD Nouméa Ville Approuvé"
+            }
+        elif any(w in q_norm for w in ["ducos", "normandie", "numbo"]):
+            return {
+                "zone": "UE / UI",
+                "zoneLabel": "Zone UE/UI • Pôle Industriel & Tertiaire",
+                "vocation": "Docks industriels, ateliers, commerces de gros et bureaux d'entreprises",
+                "hauteurMax": "12 m à 15 m",
+                "empriseSol": "60%",
+                "droitsBatir": "Activités commerciales et artisanales prioritaires, logement de gardiennage uniquement",
+                "source": "PUD Nouméa Ville Approuvé"
+            }
+        elif any(w in q_norm for w in ["tina", "portes de fer", "haut-magenta", "vallée des colons"]):
+            return {
+                "zone": "UC / UD",
+                "zoneLabel": "Zone UC/UD • Résidentiel Calme & Pavillonnaire",
+                "vocation": "Villas individuelles familiales et petits collectifs intégrés",
+                "hauteurMax": "R+1 + combles (7 m à 9 m)",
+                "empriseSol": "30% à 35%",
+                "droitsBatir": "Préservation du cadre paysager, coefficient d'emprise maîtrisé, annexes et piscines autorisées",
+                "source": "PUD Nouméa Ville Approuvé"
+            }
+        else:
+            return {
+                "zone": "UB / UC",
+                "zoneLabel": "Zone UB/UC • Urbain Mixte Calédonien",
+                "vocation": "Habitat résidentiel et commerces de proximité",
+                "hauteurMax": "R+2 / R+3 (9 m à 12 m)",
+                "empriseSol": "40%",
+                "droitsBatir": "Logements collectifs ou maisons individuelles autorisés",
+                "source": "PUD Nouméa Ville Approuvé"
+            }
+    elif "dumb" in c_norm:
+        if "mer" in q_norm or "apogoti" in q_norm or "koutio" in q_norm or "ville" in q_norm:
+            return {
+                "zone": "UB_DUMBEA",
+                "zoneLabel": "Zone UB • Coeur Urbain Dumbéa-sur-Mer / Koutio",
+                "vocation": "Éco-quartier, habitat moderne intermédiaire et commerces",
+                "hauteurMax": "R+3 / R+4 (12 m à 14 m)",
+                "empriseSol": "45%",
+                "droitsBatir": "Règlementation environnementale Dumbéa, terrasses et varangues valorisées",
+                "source": "PUD Dumbéa Approuvé"
+            }
+        else:
+            return {
+                "zone": "UD_DUMBEA",
+                "zoneLabel": "Zone UD • Résidentiel Pavillonnaire Dumbéa",
+                "vocation": "Villas individuelles avec jardin",
+                "hauteurMax": "R+1 (7 m)",
+                "empriseSol": "25% à 30%",
+                "droitsBatir": "Parcelles résidentielles calmes",
+                "source": "PUD Dumbéa Approuvé"
+            }
+    elif "pait" in c_norm:
+        return {
+            "zone": "UD_PAITA",
+            "zoneLabel": "Zone UD / 1AU • Résidentiel & Plaine de Païta",
+            "vocation": "Villas individuelles, lotissements récents et propriétés verdoyantes",
+            "hauteurMax": "R+1 (7 m)",
+            "empriseSol": "25%",
+            "droitsBatir": "Idéal pour maisons avec grand terrain et dépendances",
+            "source": "PUD Païta Approuvé"
+        }
+    elif "dore" in c_norm or "mont" in c_norm:
+        return {
+            "zone": "UD_MONT_DORE",
+            "zoneLabel": "Zone UD • Résidentiel Littoral Mont-Dore",
+            "vocation": "Cadre naturel et balnéaire préservé, villas avec vue mer et jardin",
+            "hauteurMax": "R+1 (7 m)",
+            "empriseSol": "25% à 30%",
+            "droitsBatir": "Construction individuelle respectant les marges de recul du littoral",
+            "source": "PUD Mont-Dore Approuvé"
+        }
+    else:
+        return {
+            "zone": "A / N",
+            "zoneLabel": "Zone Rurale / Naturelle",
+            "vocation": "Terrains de brousse, exploitations agricoles et propriétés naturelles",
+            "hauteurMax": "R+1 (7 m)",
+            "empriseSol": "10% à 20%",
+            "droitsBatir": "Constructions liées à l'usage d'habitation rurale ou agricole",
+            "source": "Règlement Territorial NC"
+        }
+
 
 
 def safe_str(val, default=""):
@@ -92,44 +210,21 @@ if GEO_REF_PATH.exists():
         logger.warning(f"Impossible de charger referentiel_grand_noumea.json : {e}")
 
 
-def resolve_listing_coords(item_id: str, commune_key: str, quartier_name: str, title: str = "") -> tuple[float, float]:
-    """Retourne les coordonnées GPS (lat, lon) précises sur la terre ferme avec dispersion déterministe."""
-    q_clean = (quartier_name or "").strip().lower()
-    t_clean = (title or "").strip().lower()
-    base_lat, base_lon = None, None
-
-    if q_clean and q_clean != "secteur calédonien" and q_clean in QUARTIER_COORDS:
-        base_lat, base_lon = QUARTIER_COORDS[q_clean]
-    elif q_clean and q_clean != "secteur calédonien":
-        for k, coords in QUARTIER_COORDS.items():
-            if k in q_clean or q_clean in k:
-                base_lat, base_lon = coords
-                break
-
-    # Recherche du quartier dans le titre si non trouvé ou générique
-    if not base_lat:
-        for k, coords in QUARTIER_COORDS.items():
-            if len(k) >= 4 and k in t_clean:
-                base_lat, base_lon = coords
-                break
-
-    if not base_lat:
-        com_upper = (commune_key or "NOUMEA").upper().replace("-", "_").replace(" ", "_")
-        if "MONT" in com_upper or "DORE" in com_upper:
-            com_upper = "MONT_DORE"
-        elif "DUMB" in com_upper:
-            com_upper = "DUMBEA"
-        elif "PAIT" in com_upper:
-            com_upper = "PAITA"
-        elif "NOUM" in com_upper:
-            com_upper = "NOUMEA"
-        base_lat, base_lon = COMMUNE_CENTERS.get(com_upper, COMMUNE_CENTERS["NOUMEA"])
-
-    # Micro-dispersion déterministe contenue (~120m) pour éviter les superpositions sans déborder en mer
-    h = hash(str(item_id))
-    jitter_lat = ((abs(h) % 1000) / 1000.0 - 0.5) * 0.0022
-    jitter_lon = (((abs(h) // 1000) % 1000) / 1000.0 - 0.5) * 0.0022
-    return round(base_lat + jitter_lat, 5), round(base_lon + jitter_lon, 5)
+def resolve_listing_coords(item_id: str, commune_key: str, quartier_name: str, title: str = "", description: str = "") -> tuple[float, float]:
+    """Retourne les coordonnées GPS (lat, lon) précises sur la terre ferme via le moteur cadastral et REFIL."""
+    try:
+        from src.analysis.cadastre_enrichment import resolve_listing_coordinates
+        lat, lon, _ = resolve_listing_coordinates(
+            item_id=str(item_id),
+            commune=commune_key,
+            quartier=quartier_name,
+            title=title,
+            description=description
+        )
+        return lat, lon
+    except Exception as e:
+        logger.warning(f"Erreur de résolution cadastrale pour {item_id} : {e}")
+        return -22.2710, 166.4420
 
 
 class NCImmoAPIHandler(SimpleHTTPRequestHandler):
@@ -176,6 +271,10 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/listings":
             return self.handle_get_listings()
+        elif path == "/api/cadastre/parcel-polygon":
+            return self.handle_get_parcel_polygon()
+        elif path == "/api/cadastre/pud-rules":
+            return self.handle_get_pud_rules()
         elif path == "/api/sources":
             return self.handle_get_sources()
         elif path == "/api/agencies":
@@ -324,7 +423,9 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                 commune_raw = COMMUNE_MAP.get(commune_enum, commune_enum.replace("_", "-").title())
 
                 quartier = safe_str(row.get("quartier"), "Secteur Calédonien")
-                lat_val, lon_val = resolve_listing_coords(str(row.get("id")), commune_enum, quartier, title=str(row.get("title") or ""))
+                lat_val, lon_val = resolve_listing_coords(
+                    str(row.get("id")), commune_enum, quartier, title=str(row.get("title") or ""), description=desc
+                )
                 price_xpf = safe_int(row.get("price_xpf"), 0)
                 surf_hab = safe_float(row.get("surface_habitable_m2"), 0.0)
                 surf_ter = safe_float(row.get("surface_terrain_m2"), 0.0)
@@ -576,15 +677,126 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     }
                 })
 
+            # Enrichissement foncier et juridique Cadastre & REFIL
+            try:
+                listings = enrich_listings(listings)
+            except Exception as e:
+                logger.warning(f"Impossible d'enrichir les annonces avec le cadastre : {e}")
+
             self._send_json({"success": True, "count": len(listings), "data": listings})
         except Exception as e:
             logger.error(f"Erreur lors de la récupération des annonces : {e}")
             self._send_json({"success": False, "error": str(e)}, status_code=500)
 
+    def handle_get_parcel_polygon(self):
+        """
+        Récupère en direct le polygone vectoriel officiel de la parcelle
+        depuis l'API ArcGIS cadastre.gouv.nc (avec cache mémoire).
+        """
+        try:
+            parsed_url = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed_url.query)
+            lat = float(params.get("lat", [0])[0])
+            lon = float(params.get("lon", [0])[0])
+
+            if not (-24.0 <= lat <= -19.0 and 163.0 <= lon <= 169.0):
+                return self._send_json({"success": False, "error": "Coordonnées hors Nouvelle-Calédonie"}, status_code=400)
+
+            cache_key = f"{round(lat, 5)}_{round(lon, 5)}"
+            if cache_key in PARCEL_POLYGON_CACHE:
+                return self._send_json(PARCEL_POLYGON_CACHE[cache_key])
+
+            arcgis_url = (
+                "https://cadastre.gouv.nc/arcgisServices/cadastreV3/cadastre_consult_v333/MapServer/7/query?"
+                f"geometry={lon}%2C{lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects"
+                "&outFields=*&returnGeometry=true&outSR=4326&f=json"
+            )
+
+            req = urllib.request.Request(arcgis_url, headers={
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://cadastre.gouv.nc/"
+            })
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
+            with urllib.request.urlopen(req, context=ctx, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+
+            features = data.get("features", [])
+            if not features:
+                res = {"success": True, "found": False, "polygon": None}
+                PARCEL_POLYGON_CACHE[cache_key] = res
+                return self._send_json(res)
+
+            feat = features[0]
+            attrs = feat.get("attributes", {})
+            geom = feat.get("geometry", {})
+            rings = geom.get("rings", [])
+
+            nic = attrs.get("cadastre.sde_cadastre_adm.f_parc_active.nic_graphique") or attrs.get("cadastre.cadastre_app.parcel.ref")
+            lot = attrs.get("cadastre.cadastre_app.parcel.lot_number")
+            lotissement = attrs.get("cadastre.cadastre_app.parcel.allotment_name")
+            area_m2 = attrs.get("cadastre.sde_cadastre_adm.f_parc_active.st_area(shape)")
+            h = attrs.get("cadastre.cadastre_app.parcel.h") or 0
+            a = attrs.get("cadastre.cadastre_app.parcel.a") or 0
+            c = attrs.get("cadastre.cadastre_app.parcel.c") or 0
+            contenance_str = f"{h}ha {a}a {c}ca"
+
+            geojson_feature = {
+                "type": "Feature",
+                "properties": {
+                    "nic": nic,
+                    "lot": lot,
+                    "lotissement": lotissement,
+                    "surfaceM2": round(area_m2, 1) if area_m2 else None,
+                    "contenance": contenance_str
+                },
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": rings
+                }
+            }
+
+            res = {
+                "success": True,
+                "found": True,
+                "nic": nic,
+                "lot": lot,
+                "lotissement": lotissement,
+                "surfaceM2": round(area_m2, 1) if area_m2 else None,
+                "contenance": contenance_str,
+                "polygon": geojson_feature
+            }
+            PARCEL_POLYGON_CACHE[cache_key] = res
+            return self._send_json(res)
+
+        except Exception as e:
+            logger.warning(f"Erreur parcel polygon : {e}")
+            return self._send_json({"success": False, "error": str(e)}, status_code=500)
+
+    def handle_get_pud_rules(self):
+        """
+        Renvoie le zonage d'urbanisme PUD, les droits à bâtir et la hauteur maximale.
+        """
+        try:
+            parsed_url = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed_url.query)
+            commune = params.get("commune", ["Nouméa"])[0]
+            quartier = params.get("quartier", [""])[0]
+            lat = float(params.get("lat", [0])[0])
+            lon = float(params.get("lon", [0])[0])
+
+            zone_info = determine_pud_zone(commune, quartier, lat, lon)
+            return self._send_json({"success": True, "pud": zone_info})
+        except Exception as e:
+            logger.warning(f"Erreur pud rules : {e}")
+            return self._send_json({"success": False, "error": str(e)}, status_code=500)
+
     def handle_get_sources(self):
         """Renvoie les statistiques réelles des sources surveillées depuis DuckDB sans chiffre factice."""
         try:
-            db = PropertyDatabase()
+            db = PropertyDatabase(read_only=True)
             df = db.query("""
                 SELECT source, COUNT(*) AS count, MAX(scraped_at) AS last_scan
                 FROM listings
@@ -692,7 +904,7 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
     def handle_get_agencies(self):
         """Renvoie l'annuaire des 52 agences calédoniennes enrichi des comptes réels en base DuckDB."""
         try:
-            db = PropertyDatabase()
+            db = PropertyDatabase(read_only=True)
             df = db.query("""
                 SELECT 
                     agency_name,

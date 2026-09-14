@@ -114,9 +114,10 @@ def test_duckdb_storage(tmp_path, cleaner, enricher):
     assert summary.iloc[0]["prix_median_xpf"] == 28_000_000
 
 
-def test_rental_price_parsing_and_differentiation(cleaner):
+def test_rental_price_parsing_and_differentiation(cleaner, tmp_path):
     from src.ingestion.live_scraper import LiveNCScraper
-    scraper = LiveNCScraper()
+    from src.storage.database import PropertyDatabase
+    scraper = LiveNCScraper(db=PropertyDatabase(db_path=tmp_path / "test_rental.duckdb"))
 
     # 1. Test annonce de location (ex: Dock à Ducos avec loyer de 270 000 F CFP)
     rental_item = {
@@ -548,7 +549,7 @@ def test_database_upsert_updates_transaction_type(tmp_path, cleaner):
 
 def test_no_arbitrary_limit_and_price_drops_retention():
     """Vérifie que la requête du serveur restitue l'intégralité des annonces et préserve toutes les baisses de prix."""
-    db = PropertyDatabase()
+    db = PropertyDatabase(read_only=True)
     df = db.query("""
         SELECT * FROM listings 
         WHERE is_active = TRUE 

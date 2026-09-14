@@ -9,18 +9,23 @@ from src.models.listing import RawListing, CleanedListing
 
 
 class PropertyDatabase:
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Optional[Path] = None, read_only: bool = False):
         self.db_path = db_path or DB_PATH
+        self.read_only = read_only
         # Assurer que le dossier parent existe
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_schema()
+        if not self.read_only and not self.db_path.exists():
+            self._init_schema()
+        elif not self.read_only:
+            self._init_schema()
 
-    def get_connection(self) -> duckdb.DuckDBPyConnection:
-        return duckdb.connect(str(self.db_path))
+    def get_connection(self, read_only: Optional[bool] = None) -> duckdb.DuckDBPyConnection:
+        ro = self.read_only if read_only is None else read_only
+        return duckdb.connect(str(self.db_path), read_only=ro)
 
     def _init_schema(self):
         """Initialise les tables et vues analytiques DuckDB."""
-        with self.get_connection() as con:
+        with self.get_connection(read_only=False) as con:
             # Table des annonces nettoyées
             con.execute("""
             CREATE TABLE IF NOT EXISTS listings (
@@ -268,12 +273,12 @@ class PropertyDatabase:
 
     def query(self, sql: str) -> pd.DataFrame:
         """Exécute une requête SQL personnalisée et renvoie un DataFrame."""
-        with self.get_connection() as con:
+        with self.get_connection(read_only=True) as con:
             return con.execute(sql).df()
 
     def get_market_summary(self) -> pd.DataFrame:
         """Retourne la synthèse des prix par quartier et type d'opération."""
-        with self.get_connection() as con:
+        with self.get_connection(read_only=True) as con:
             return con.execute("""
             SELECT * FROM v_marche_par_quartier 
             ORDER BY commune, transaction_type, total_annonces DESC
