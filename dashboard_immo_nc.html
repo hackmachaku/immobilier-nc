@@ -1011,11 +1011,16 @@
               <span>🔑 Locations</span>
               <span id="mapBadgeLoc" class="px-1.5 py-0.5 rounded-full bg-slate-700 text-[10px]">0</span>
             </button>
+            <button onclick="setMapFilterMode('drops')" id="btnMapModeDrops" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-all flex items-center gap-1.5 border border-emerald-500/40">
+              <span>📉 Baisses de prix</span>
+              <span id="mapBadgeDrops" class="px-1.5 py-0.5 rounded-full bg-emerald-600/90 text-white font-bold text-[10px]">0</span>
+            </button>
             <button onclick="toggleMapQuartiers()" id="btnMapQuartiers" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-all flex items-center gap-1.5 border border-slate-700">
               <span id="mapQuartiersIcon">🏙️</span>
               <span>Repères Quartiers</span>
             </button>
           </div>
+
         </div>
 
         <!-- LEGENDE DYNAMIQUE -->
@@ -3002,18 +3007,24 @@
     // =========================================================================
     function setMapFilterMode(mode) {
       currentMapMode = mode;
-      const modes = ['all', 'vente', 'location'];
+      const modes = ['all', 'vente', 'location', 'drops'];
       modes.forEach(m => {
-        const btnId = m === 'all' ? 'btnMapModeAll' : (m === 'vente' ? 'btnMapModeVente' : 'btnMapModeLoc');
+        const btnId = m === 'all' ? 'btnMapModeAll' : (m === 'vente' ? 'btnMapModeVente' : (m === 'location' ? 'btnMapModeLoc' : 'btnMapModeDrops'));
         const btn = document.getElementById(btnId);
         if (btn) {
           if (m === mode) {
-            btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-500 text-white shadow transition-all flex items-center gap-1.5";
+            if (m === 'drops') {
+              btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white shadow transition-all flex items-center gap-1.5 border border-emerald-400";
+            } else {
+              btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-500 text-white shadow transition-all flex items-center gap-1.5";
+            }
           } else {
-            btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-all flex items-center gap-1.5";
+            const extraBorder = m === 'drops' ? 'border border-emerald-500/40' : '';
+            btn.className = `px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-all flex items-center gap-1.5 ${extraBorder}`;
           }
         }
       });
+      updateMapLegend();
       renderMapMarkers();
     }
 
@@ -3063,7 +3074,20 @@
       const container = document.getElementById('mapLegendContainer');
       if (!container) return;
 
-      if (currentMapMode === 'location') {
+      if (currentMapMode === 'drops') {
+        container.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-emerald-400">📉 Annonces en Baisse de Prix (Positionnement Marché) :</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-red-500 inline-block shadow-sm"></span> <span class="text-slate-300">Prestige / Élite</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-orange-500 inline-block shadow-sm"></span> <span class="text-slate-300">Haut de Gamme</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-sky-500 inline-block shadow-sm"></span> <span class="text-slate-300">Médian Marché</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block shadow-sm"></span> <span class="text-slate-300">Accessible / Économique</span></span>
+            <span class="flex items-center gap-1.5 border-l border-slate-700 pl-3"><span class="w-3 h-3 rounded-full bg-indigo-500 inline-block border border-dashed border-white"></span> <span class="text-indigo-300">Repères Quartiers</span></span>
+          </div>
+        `;
+      } else if (currentMapMode === 'location') {
         container.innerHTML = `
           <div class="flex items-center gap-2">
             <span class="font-semibold text-slate-300">🔑 Échelle Loyers Mensuels :</span>
@@ -3106,11 +3130,12 @@
     function initLeafletMap() {
       if (leafletMapInstance) {
         leafletMapInstance.invalidateSize();
+        updateMapLegend();
         renderMapMarkers();
         return;
       }
 
-      leafletMapInstance = L.map('mapContainer').setView([-22.255, 166.465], 12);
+      leafletMapInstance = L.map('mapContainer', { preferCanvas: true }).setView([-22.255, 166.465], 12);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
@@ -3119,6 +3144,7 @@
       mapMarkersGroup = L.layerGroup().addTo(leafletMapInstance);
       mapQuartiersGroup = L.layerGroup().addTo(leafletMapInstance);
 
+      updateMapLegend();
       renderMapMarkers();
     }
 
@@ -3132,19 +3158,24 @@
       const totalCount = allItems.length;
       const ventesCount = allItems.filter(x => !x.isLocation && x.transactionType !== 'LOCATION').length;
       const locCount = allItems.filter(x => x.isLocation || x.transactionType === 'LOCATION').length;
+      const dropsCount = allItems.filter(x => x.status === 'price_drop' || (x.initialPrice > 0 && x.currentPrice < x.initialPrice)).length;
 
       const bAll = document.getElementById('mapBadgeAll');
       const bVente = document.getElementById('mapBadgeVente');
       const bLoc = document.getElementById('mapBadgeLoc');
+      const bDrops = document.getElementById('mapBadgeDrops');
       if (bAll) bAll.textContent = totalCount;
       if (bVente) bVente.textContent = ventesCount;
       if (bLoc) bLoc.textContent = locCount;
+      if (bDrops) bDrops.textContent = dropsCount;
 
       let filtered = allItems;
       if (currentMapMode === 'vente') {
         filtered = allItems.filter(x => !x.isLocation && x.transactionType !== 'LOCATION');
       } else if (currentMapMode === 'location') {
         filtered = allItems.filter(x => x.isLocation || x.transactionType === 'LOCATION');
+      } else if (currentMapMode === 'drops') {
+        filtered = allItems.filter(x => x.status === 'price_drop' || (x.initialPrice > 0 && x.currentPrice < x.initialPrice));
       }
 
       const withCoords = filtered.filter(x => typeof x.lat === 'number' && typeof x.lon === 'number' && !isNaN(x.lat) && !isNaN(x.lon));
@@ -3156,6 +3187,10 @@
         const priceStr = item.currentPrice ? item.currentPrice.toLocaleString('fr-FR') + ' F CFP' : 'Prix N.C';
         const priceEur = item.currentPrice ? Math.round(item.currentPrice / 119.33).toLocaleString('fr-FR') + ' €' : '';
         const pM2Str = item.priceM2 > 0 ? `${item.priceM2.toLocaleString('fr-FR')} F/m²` : (isLoc ? 'Loyer mensuel' : '');
+
+        const hasDropped = Boolean(item.initialPrice > item.currentPrice);
+        const dropAmount = hasDropped ? (item.initialPrice - item.currentPrice) : 0;
+        const dropPercent = (hasDropped && item.initialPrice > 0) ? Math.round((dropAmount / item.initialPrice) * 100) : 0;
 
         const imgThumb = (item.images && item.images.length > 0 && item.images[0]) ? item.images[0] : (item.image || 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=400&q=80');
 
@@ -3171,6 +3206,10 @@
           ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-teal-500/30 text-teal-300 border border-teal-500/40">🛋️ Meublé</span>`
           : (item.isFurnished === false && isLoc ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">🚪 Non meublé</span>` : '');
 
+        const badgeDrop = hasDropped
+          ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/30 text-emerald-300 border border-emerald-500/50 flex items-center gap-0.5">📉 -${dropPercent}%</span>`
+          : (item.status === 'new' ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-500/30 text-sky-300 border border-sky-500/40">🟢 Nouveau</span>` : '');
+
         const safeTitle = (item.title || 'Annonce Immobilière').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
         const popupHtml = `
@@ -3181,6 +3220,7 @@
                 ${badgeTx}
                 ${badgeTypo}
                 ${badgeFurnished}
+                ${badgeDrop}
               </div>
             </div>
             <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 700; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${safeTitle}">${safeTitle}</h4>
@@ -3191,6 +3231,11 @@
             </div>
             <div style="background: rgba(15, 23, 42, 0.7); padding: 6px 8px; border-radius: 6px; border-left: 3px solid ${markerColor}; margin-bottom: 8px;">
               <div style="font-size: 14px; font-weight: 800; color: ${markerColor};">${priceStr} ${isLoc ? '<span style="font-size: 10px; font-weight: normal; color: #cbd5e1;">/mois</span>' : ''}</div>
+              ${hasDropped ? `
+                <div style="font-size: 10px; color: #34d399; font-weight: 700; margin-top: 2px;">
+                  📉 Baisse de -${dropPercent}% <span style="color: #94a3b8; font-weight: normal; text-decoration: line-through;">(${item.initialPrice.toLocaleString('fr-FR')} F)</span>
+                </div>
+              ` : ''}
               <div style="font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; margin-top: 2px;">
                 <span>${pM2Str}</span>
                 <span>~${priceEur}</span>
@@ -3218,6 +3263,7 @@
         marker.bindPopup(popupHtml, { maxWidth: 280, className: 'custom-immo-popup' });
         marker.addTo(mapMarkersGroup);
       });
+
 
       if (showMapQuartiers && typeof quartiersData !== 'undefined') {
         Object.keys(quartiersData).forEach(communeKey => {
