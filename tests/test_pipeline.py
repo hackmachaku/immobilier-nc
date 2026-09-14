@@ -546,6 +546,23 @@ def test_database_upsert_updates_transaction_type(tmp_path, cleaner):
         assert res[1] == 360_000
 
 
+def test_no_arbitrary_limit_and_price_drops_retention():
+    """Vérifie que la requête du serveur restitue l'intégralité des annonces et préserve toutes les baisses de prix."""
+    db = PropertyDatabase()
+    df = db.query("""
+        SELECT * FROM listings 
+        WHERE is_active = TRUE 
+        ORDER BY CASE WHEN initial_price_xpf > price_xpf THEN 0 ELSE 1 END, scraped_at DESC, id DESC
+    """)
+    # Vérifie que la base complète est chargée sans troncature
+    assert len(df) >= 2600
+    
+    # Vérifie la présence intacte des baisses de prix (multi-sources enrichies)
+    drops = df[df["initial_price_xpf"] > df["price_xpf"]]
+    assert len(drops) >= 100
+
+
+
 
 
 

@@ -200,13 +200,30 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
     def handle_get_listings(self):
         """Renvoie les annonces réelles stockées dans DuckDB formatées pour le frontend."""
         try:
+            parsed_url = urllib.parse.urlparse(self.path)
+            query_params = urllib.parse.parse_qs(parsed_url.query)
+            limit_val = None
+            if "limit" in query_params:
+                try:
+                    limit_val = int(query_params["limit"][0])
+                except (ValueError, TypeError):
+                    limit_val = None
+
             db = PropertyDatabase()
-            df = db.query("""
-                SELECT * FROM listings 
-                WHERE is_active = TRUE 
-                ORDER BY scraped_at DESC, id DESC 
-                LIMIT 1500
-            """)
+            if limit_val and limit_val > 0:
+                df = db.query(f"""
+                    SELECT * FROM listings 
+                    WHERE is_active = TRUE 
+                    ORDER BY CASE WHEN initial_price_xpf > price_xpf THEN 0 ELSE 1 END, scraped_at DESC, id DESC 
+                    LIMIT {limit_val}
+                """)
+            else:
+                df = db.query("""
+                    SELECT * FROM listings 
+                    WHERE is_active = TRUE 
+                    ORDER BY CASE WHEN initial_price_xpf > price_xpf THEN 0 ELSE 1 END, scraped_at DESC, id DESC
+                """)
+
 
             # Pré-chargement de l'historique complet des prix ordonné chronologiquement
             history_by_listing: Dict[str, List[Dict[str, Any]]] = {}

@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-09-14T00:34:44.791168+00:00",
+  "timestamp": "2026-09-14T03:13:02.059003+00:00",
   "status": "HEALTHY",
   "is_healthy": true,
   "logs_summary": {
     "file_exists": true,
     "log_path": "C:\\Users\\WD4060\\OneDrive - ENGIE\\Documents\\Antigravity\\Immobilier NC\\logs\\pipeline.log",
-    "total_lines": 729,
-    "info_count": 341,
+    "total_lines": 765,
+    "info_count": 377,
     "warning_count": 388,
     "error_count": 0,
     "errors": [],
