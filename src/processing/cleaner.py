@@ -335,6 +335,11 @@ class ListingCleaner:
         else:
             rooms, bedrooms = self.parse_rooms(raw.raw_rooms, f"{raw.title} {raw.description}")
 
+        # Estimation de la surface habitable si non déclarée mais typologie F1/F2/F3... connue (barème standard NC)
+        if surface_hab is None and prop_type in (PropertyType.APPARTEMENT, PropertyType.MAISON_VILLA) and rooms:
+            standard_surfaces = {1: 30.0, 2: 50.0, 3: 75.0, 4: 100.0, 5: 135.0, 6: 170.0}
+            surface_hab = standard_surfaces.get(rooms, float(rooms * 25.0))
+
         # Localisation
         commune, quartier, _ = self.geo_ref.find_location(f"{raw.raw_location or ''} {raw.title} {raw.description or ''}")
 

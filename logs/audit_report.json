@@ -1,38 +1,44 @@
 {
-  "timestamp": "2026-09-13T23:13:21.958770+00:00",
+  "timestamp": "2026-09-14T00:34:44.791168+00:00",
   "status": "HEALTHY",
   "is_healthy": true,
   "logs_summary": {
     "file_exists": true,
     "log_path": "C:\\Users\\WD4060\\OneDrive - ENGIE\\Documents\\Antigravity\\Immobilier NC\\logs\\pipeline.log",
-    "total_lines": 473,
-    "info_count": 266,
-    "warning_count": 207,
+    "total_lines": 729,
+    "info_count": 341,
+    "warning_count": 388,
     "error_count": 0,
     "errors": [],
     "warnings": [
-      "L463: 2026-09-14 10:13:20 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=508074, source=bienmeloger.nc",
-      "L464: 2026-09-14 10:13:20 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=429402, source=immobilier.nc",
-      "L465: 2026-09-14 10:13:20 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=514607, source=immobilier.nc",
-      "L466: 2026-09-14 10:13:20 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=432356, source=immobilier.nc",
-      "L467: 2026-09-14 10:13:20 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=339905, source=immobilier.nc",
-      "L468: 2026-09-14 10:13:21 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=338256, source=immobilier.nc",
-      "L469: 2026-09-14 10:13:21 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=507502, source=bienmeloger.nc",
-      "L470: 2026-09-14 10:13:21 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=a1ca5992-19c2-4743-af8d-d63ee2b1d4e4, source=yatoo.nc",
-      "L471: 2026-09-14 10:13:21 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=c0a8334a-03d5-43ba-9dfc-5159d88ef56e, source=yatoo.nc",
-      "L472: 2026-09-14 10:13:21 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=43ffa5a0-6640-485c-9328-4701a0272758, source=yatoo.nc"
+      "L719: 2026-09-14 11:34:44 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=5328744, source=immonc",
+      "L720: 2026-09-14 11:34:44 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=5329220, source=immonc",
+      "L721: 2026-09-14 11:34:44 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=5331785, source=immonc",
+      "L722: 2026-09-14 11:34:44 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=5329545, source=immonc",
+      "L723: 2026-09-14 11:34:44 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=5330289, source=immonc",
+      "L724: 2026-09-14 11:34:44 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=5330676, source=immonc",
+      "L725: 2026-09-14 11:34:44 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=5331214, source=immonc",
+      "L726: 2026-09-14 11:34:44 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=5331221, source=immonc",
+      "L727: 2026-09-14 11:34:44 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=5332043, source=immonc",
+      "L728: 2026-09-14 11:34:44 | WARNING  | [ingestion:process_and_store:55] - Annonce rejetée (données insuffisantes) : ID=5331706, source=immonc"
     ]
   },
   "database_summary": {
-    "total_listings": 1274,
-    "active_listings": 1274,
+    "total_listings": 2683,
+    "active_listings": 2683,
     "data_quality": {
       "null_prices": 0,
-      "null_surfaces": 232,
-      "valid_m2_ratio_pct": 81.8,
+      "null_surfaces": 584,
+      "valid_m2_ratio_pct": 78.2,
       "is_clean": false
     },
     "sources_breakdown": [
+      {
+        "source": "immonc",
+        "count": 1409,
+        "avg_price": 17340111.0,
+        "avg_m2": 192356.0
+      },
       {
         "source": "immobilier.nc",
         "count": 702,
@@ -55,28 +61,28 @@
     "communes_breakdown": [
       {
         "commune": "NOUMEA",
-        "count": 637
+        "count": 1471
       },
       {
         "commune": "AUTRE",
-        "count": 213
-      },
-      {
-        "commune": "DUMBEA",
-        "count": 150
-      },
-      {
-        "commune": "MONT_DORE",
-        "count": 147
+        "count": 438
       },
       {
         "commune": "PAITA",
-        "count": 127
+        "count": 260
+      },
+      {
+        "commune": "DUMBEA",
+        "count": 259
+      },
+      {
+        "commune": "MONT_DORE",
+        "count": 255
       }
     ],
     "views_functional": {
-      "v_marche_par_quartier_rows": 187,
-      "v_marche_par_typologie_rows": 93
+      "v_marche_par_quartier_rows": 213,
+      "v_marche_par_typologie_rows": 107
     },
     "is_valid": true
   }

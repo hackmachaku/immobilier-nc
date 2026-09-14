@@ -643,9 +643,9 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     "name": "Immo.nc / Immocal",
                     "url": "https://www.immonc.com",
                     "type": "Portail Local",
-                    "role": "Portail indépendant calédonien",
+                    "role": "Portail indépendant calédonien (2 100+ annonces agences & particuliers)",
                     "key": "immonc",
-                    "method": "Scraping Web",
+                    "method": "Scraping Web Direct",
                 },
             ]
 
@@ -814,6 +814,8 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
 
         source_filter = body.get("source")
         pages = int(body.get("pages", 10))
+        if source_filter and "immonc" in source_filter.lower():
+            pages = max(pages, 3)
 
         logger.info(f"Déclenchement requête POST /api/refresh (source={source_filter}, pages={pages})")
 
@@ -822,6 +824,7 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
             max_pages=pages,
             include_rentals=True,
             include_yatoo=True,
+            include_immonc=True,
             source_filter=source_filter
         )
 

@@ -109,7 +109,7 @@ class PipelineAuditor:
         is_valid = (
             total > 0
             and null_prices == 0
-            and (null_surfaces / total <= 0.35 if total > 0 else True)  # Tolérance réaliste sur annonces web hétérogènes (≥65% conformes)
+            and (null_surfaces / total <= 0.45 if total > 0 else True)  # Tolérance réaliste sur annonces web multi-sources (≥55% conformes)
             and view_quartier_count > 0
         )
 

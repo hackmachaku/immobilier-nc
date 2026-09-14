@@ -2,9 +2,11 @@ import os
 import sys
 import json
 import re
+import html as html_lib
 import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor
 import requests
 import urllib3
 
@@ -45,10 +47,12 @@ class LiveNCScraper:
     1. À l'API publique de Nouvelle-Calédonie (immobilier.nc / bienmeloger.nc)
        couvrant la fédération des 52 agences professionnelles de NC (3 300+ ventes et 3 000+ locations).
     2. À l'API GraphQL Cloud Function de Yatoo.nc (petites annonces ventes & locations).
+    3. Au portail calédonien Immo.nc (immonc.com - 2 100+ annonces d'agences et de particuliers).
     """
 
     API_POSTS_URL = "https://api.immobilier.nc/api/posts"
     YATOO_GRAPHQL_URL = "https://australia-southeast1-yatoo-nc.cloudfunctions.net/api"
+    IMMONC_BASE_URL = "https://www.immonc.com"
 
     HEADERS_IMMO_NC = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -61,6 +65,12 @@ class LiveNCScraper:
         "Content-Type": "application/json",
         "Origin": "https://yatoo.nc",
         "Referer": "https://yatoo.nc/",
+    }
+
+    HEADERS_IMMONC = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": "https://www.immonc.com/",
     }
 
     def __init__(self, db: Optional[PropertyDatabase] = None):
@@ -363,21 +373,323 @@ class LiveNCScraper:
             logger.warning(f"Erreur conversion Yatoo item {item.get('id')} : {e}")
             return None
 
+    def fetch_immonc_geodata(self, deal_type: str = "vente") -> List[Dict[str, Any]]:
+        """Télécharge le jeu complet d'annonces géolocalisées depuis la carte interactive Immo.nc."""
+        deal_slug = "vente" if deal_type.lower() == "vente" else "location"
+        url = f"{self.IMMONC_BASE_URL}/geolocalisation-{deal_slug}"
+        logger.info(f"Téléchargement du flux cartographique Immo.nc ({deal_slug}) : {url}")
+        try:
+            resp = requests.get(url, headers=self.HEADERS_IMMONC, timeout=25, verify=False)
+            resp.raise_for_status()
+            html = resp.content.decode("windows-1252", errors="ignore")
+            matches = re.findall(r'data:\s*(\{.*?"id_annonce".*?\})\s*\}', html)
+            items = []
+            for m in matches:
+                try:
+                    items.append(json.loads(m))
+                except Exception:
+                    pass
+            logger.info(f"Flux cartographique Immo.nc ({deal_slug}) : {len(items)} annonces directes extraites.")
+            return items
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération cartographique Immo.nc ({deal_slug}) : {e}")
+            return []
+
+    def parse_immonc_geo_item_to_raw_listing(self, item: Dict[str, Any], deal_type: str = "vente") -> Optional[RawListing]:
+        """Convertit un élément cartographique Immo.nc en RawListing standardisé."""
+        try:
+            item_id = str(item.get("id_annonce"))
+            if not item_id:
+                return None
+
+            title = f"{item.get('lib_bien', '')} {item.get('lib_sous_types', '')}".strip() or "Bien immobilier"
+            loc_str = f"{item.get('suburb', '')} {item.get('location', '')}".strip()
+            price_str = item.get("prix_annonce")
+            is_loc = deal_type.lower() == "location" or "location" in deal_type.lower()
+
+            photo_fn = item.get("property_photo")
+            photo_url = f"https://immonc.com/photos/photos_big/{photo_fn}" if photo_fn else None
+
+            url = item.get("property_url") or f"https://www.immonc.com/annonce/{deal_type}/{item_id}"
+
+            lower_ident = f"{title} {url}".lower()
+            if any(k in lower_ident for k in ["villa", "maison"]):
+                prop_type = "Maison"
+            elif any(k in lower_ident for k in ["appartement", "f1", "f2", "f3", "f4", "studio"]):
+                prop_type = "Appartement"
+            elif "terrain" in lower_ident:
+                prop_type = "Terrain"
+            elif "dock" in lower_ident or "entrepot" in lower_ident:
+                prop_type = "Dock"
+            elif "immeuble" in lower_ident:
+                prop_type = "Immeuble"
+            elif any(k in lower_ident for k in ["commercial", "bureau", "local"]):
+                prop_type = "Local commercial"
+            else:
+                prop_type = "Autre"
+
+            agency = resolve_agency_name(
+                raw_name=item.get("partenaires"),
+                raw_mail=item.get("email"),
+                text_blob=f"{title} {loc_str}"
+            )
+
+            desc = f"Annonce {title} à {loc_str}. Contact: {item.get('partenaires')} (Tél: {item.get('tel', '')}, Email: {item.get('email', '')})."
+
+            return RawListing(
+                source="immonc",
+                source_id=item_id,
+                url=url,
+                title=title,
+                description=desc,
+                raw_price=price_str,
+                raw_surface=None,
+                raw_rooms=item.get("lib_sous_types"),
+                raw_location=loc_str,
+                transaction_type_declared="Location" if is_loc else "Vente",
+                property_type_declared=prop_type,
+                agency_name=agency,
+                image_url=photo_url,
+                images_json=json.dumps([photo_url]) if photo_url else None,
+                extracted_at=datetime.now(timezone.utc),
+            )
+        except Exception as e:
+            return None
+
+    def fetch_immonc_raw_items(self, deal_type: str = "vente", page: int = 1) -> List[Dict[str, Any]]:
+        """Scrape une page d'annonces depuis le portail Immo.nc (immonc.com)."""
+        deal_slug = "vente" if deal_type.lower() == "vente" else "location"
+        url = f"{self.IMMONC_BASE_URL}/{deal_slug}?page={page}"
+        logger.info(f"Connexion au flux Immo.nc : {url} (page={page}, deal_type={deal_slug})")
+        try:
+            resp = requests.get(url, headers=self.HEADERS_IMMONC, timeout=14, verify=False)
+            resp.raise_for_status()
+            raw_html = resp.content.decode("windows-1252", errors="ignore")
+
+            card_chunks = re.split(r'(?=<div[^>]*class=["\'][^"\']*search-result-card[^"\']*["\'][^>]*id=["\']gcli\d+["\'])', raw_html)
+            items = []
+            for chunk in card_chunks:
+                id_m = re.search(r'id=["\']gcli(\d+)["\']', chunk)
+                if not id_m:
+                    continue
+                item_id = id_m.group(1)
+
+                link_m = re.search(r'href=["\'](https://www.immonc.com/annonce/[^"\']+)["\']', chunk)
+                url_link = link_m.group(1) if link_m else f"https://www.immonc.com/annonce/{deal_slug}/{item_id}"
+
+                title_m = re.search(r'<div[^>]*class=["\']ventitle["\'][^>]*>.*?<h2>(.*?)</h2>', chunk, re.DOTALL)
+                title = html_lib.unescape(title_m.group(1).strip()) if title_m else "Bien immobilier"
+
+                loc_m = re.search(r'<div[^>]*class=["\']vendrlocation["\'][^>]*>.*?<h3>(.*?)</h3>', chunk, re.DOTALL)
+                location_raw = html_lib.unescape(loc_m.group(1).strip()) if loc_m else ""
+
+                price_m = re.search(r'<h3[^>]*class=["\']venderprice["\'][^>]*>(.*?)</h3>', chunk, re.DOTALL)
+                price_raw = price_m.group(1).strip() if price_m else ""
+                clean_num = re.sub(r'[^\d]', '', price_raw)
+                price_val = int(clean_num) if clean_num else 0
+
+                desc_m = re.search(r'<div[^>]*class=["\']pera["\'][^>]*>.*?<p>(.*?)</p>', chunk, re.DOTALL)
+                desc = html_lib.unescape(desc_m.group(1).strip()) if desc_m else ""
+
+                agency_m = re.search(rf'id=["\']ad_username{item_id}["\'][^>]*value=["\'](.*?)["\']', chunk)
+                agency_name = html_lib.unescape(agency_m.group(1).strip()) if agency_m else ""
+                if not agency_name:
+                    ag_user_m = re.search(r'title=["\']Voir les annonces de (.*?)["\']', chunk)
+                    agency_name = html_lib.unescape(ag_user_m.group(1).strip()) if ag_user_m else "Particulier / ImmoNC"
+
+                email_m = re.search(rf'id=["\']ag_email{item_id}["\'][^>]*value=["\'](.*?)["\']', chunk)
+                agency_email = email_m.group(1).strip() if email_m else ""
+
+                photos = re.findall(r'<img[^>]*src=["\'](https://immonc.com/photos/(?:photos_medium|photos_big)/[^"\']+)["\']', chunk)
+                seen_photos = []
+                for p in photos:
+                    big_p = p.replace("/photos_medium/", "/photos_big/")
+                    if big_p not in seen_photos:
+                        seen_photos.append(big_p)
+
+                items.append({
+                    "id": item_id,
+                    "url": url_link,
+                    "title": title,
+                    "location_raw": location_raw,
+                    "price_xpf": price_val,
+                    "description": desc,
+                    "agency_name": agency_name,
+                    "agency_email": agency_email,
+                    "photos": seen_photos,
+                    "deal_type": deal_slug,
+                })
+
+            logger.info(f"Immo.nc page {page} ({deal_slug}) : {len(items)} annonces extraites.")
+            return items
+        except Exception as e:
+            logger.error(f"Erreur de connexion à Immo.nc (page {page}, {deal_type}) : {e}")
+            return []
+
+    def parse_immonc_item_to_raw_listing(self, item: Dict[str, Any], deal_type: str = "vente") -> Optional[RawListing]:
+        """Convertit une annonce Immo.nc en RawListing standardisé."""
+        try:
+            item_id = str(item.get("id"))
+            if not item_id:
+                return None
+
+            title = str(item.get("title") or "Bien immobilier").strip()
+            desc = str(item.get("description") or "").strip()
+            url = str(item.get("url") or f"https://www.immonc.com/annonce/{deal_type}/{item_id}").strip()
+            loc_raw = str(item.get("location_raw") or "").strip()
+            price_xpf = item.get("price_xpf", 0)
+
+            is_loc = deal_type.lower() == "location" or "location" in url.lower() or "loyer" in title.lower()
+            price_str = f"{price_xpf} F CFP/mois" if is_loc else f"{price_xpf} F CFP"
+
+            photos = item.get("photos") or []
+            photo_url = photos[0] if photos else None
+            images_json = json.dumps(photos) if photos else None
+
+            lower_ident = f"{title} {url}".lower()
+            if any(k in lower_ident for k in ["villa", "maison"]):
+                prop_type = "Maison"
+            elif any(k in lower_ident for k in ["appartement", "f1", "f2", "f3", "f4", "studio"]):
+                prop_type = "Appartement"
+            elif "terrain" in lower_ident:
+                prop_type = "Terrain"
+            elif "dock" in lower_ident or "entrepot" in lower_ident:
+                prop_type = "Dock"
+            elif "immeuble" in lower_ident:
+                prop_type = "Immeuble"
+            elif any(k in lower_ident for k in ["commercial", "bureau", "local"]):
+                prop_type = "Local commercial"
+            else:
+                lower_desc = desc.lower()
+                if any(k in lower_desc for k in ["villa", "maison"]):
+                    prop_type = "Maison"
+                elif any(k in lower_desc for k in ["appartement", "studio"]):
+                    prop_type = "Appartement"
+                elif "terrain" in lower_desc:
+                    prop_type = "Terrain"
+                elif "dock" in lower_desc:
+                    prop_type = "Dock"
+                else:
+                    prop_type = "Autre"
+
+            facs = []
+            lower_text = f"{title} {desc} {url}".lower()
+            if "piscine" in lower_text:
+                facs.append("piscine")
+            if "clim" in lower_text:
+                facs.append("climatisation")
+            if "vue mer" in lower_text or "vue lagon" in lower_text:
+                facs.append("vue_mer")
+            if "meubl" in lower_text and not ("non meubl" in lower_text or "non-meubl" in lower_text):
+                facs.append("meuble")
+
+            agency = resolve_agency_name(
+                raw_name=item.get("agency_name"),
+                raw_mail=item.get("agency_email"),
+                text_blob=f"{title} {desc}"
+            )
+
+            return RawListing(
+                source="immonc",
+                source_id=item_id,
+                url=url,
+                title=title,
+                description=desc,
+                raw_price=price_str,
+                raw_surface=None,
+                raw_rooms=None,
+                raw_location=loc_raw,
+                transaction_type_declared="Location" if is_loc else "Vente",
+                property_type_declared=prop_type,
+                agency_name=agency,
+                image_url=photo_url,
+                images_json=images_json,
+                facilities=facs if facs else None,
+                extracted_at=datetime.now(timezone.utc),
+            )
+        except Exception as e:
+            logger.warning(f"Erreur conversion Immo.nc item {item.get('id')} : {e}")
+            return None
+
+    def fetch_immonc_mass_listings(self, max_pages: int = 10, include_rentals: bool = True) -> List[RawListing]:
+        """
+        Moissonnage massif et hybride d'Immo.nc :
+        1. Capture instantanée des flux cartographiques (1 450+ annonces avec coordonnées et contacts).
+        2. Moissonnage multithreadé des pages de résultats pour enrichir les fiches de descriptions complètes et de photos HD multiples.
+        """
+        logger.info("=== DEMARRAGE DU MOISSONNAGE MASSIF IMMO.NC ===")
+        listings_map: Dict[str, RawListing] = {}
+
+        # 1. Capture du flux cartographique géolocalisé
+        try:
+            for it in self.fetch_immonc_geodata("vente"):
+                rl = self.parse_immonc_geo_item_to_raw_listing(it, deal_type="vente")
+                if rl:
+                    listings_map[rl.source_id] = rl
+        except Exception as e:
+            logger.warning(f"Erreur flux carto vente : {e}")
+
+        if include_rentals:
+            try:
+                for it in self.fetch_immonc_geodata("location"):
+                    rl = self.parse_immonc_geo_item_to_raw_listing(it, deal_type="location")
+                    if rl:
+                        listings_map[rl.source_id] = rl
+            except Exception as e:
+                logger.warning(f"Erreur flux carto location : {e}")
+
+        logger.info(f"Immo.nc : {len(listings_map)} annonces de base capturées via le flux cartographique.")
+
+        # 2. Moissonnage multithreadé des pages de résultats pour enrichissement
+        pages_to_crawl = max(1, min(max_pages, 25))
+        tasks = []
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for p in range(1, pages_to_crawl + 1):
+                tasks.append(ex.submit(self.fetch_immonc_raw_items, "vente", p))
+                if include_rentals:
+                    tasks.append(ex.submit(self.fetch_immonc_raw_items, "location", p))
+
+            for t in tasks:
+                try:
+                    for it in t.result():
+                        deal = it.get("deal_type", "vente")
+                        rl = self.parse_immonc_item_to_raw_listing(it, deal_type=deal)
+                        if rl:
+                            if rl.source_id in listings_map:
+                                existing = listings_map[rl.source_id]
+                                if rl.description and len(rl.description) > len(existing.description or ""):
+                                    existing.description = rl.description
+                                if rl.images_json and len(rl.images_json) > len(existing.images_json or ""):
+                                    existing.images_json = rl.images_json
+                                    existing.image_url = rl.image_url
+                                if rl.facilities:
+                                    existing.facilities = rl.facilities
+                            else:
+                                listings_map[rl.source_id] = rl
+                except Exception as e:
+                    logger.warning(f"Erreur traitement page Immo.nc : {e}")
+
+        all_listings = list(listings_map.values())
+        logger.info(f"=== MOISSONNAGE IMMO.NC TERMINE : {len(all_listings)} annonces complètes prêtes pour ingestion ===")
+        return all_listings
+
     def run_live_sync(
         self,
         max_pages: int = 10,
         include_rentals: bool = True,
         include_yatoo: bool = True,
+        include_immonc: bool = True,
         source_filter: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Exécute la synchronisation en direct multi-sources complète :
         1. Télécharge les ventes et locations depuis api.immobilier.nc (Fédération des 52 agences NC)
         2. Télécharge les petites annonces en direct depuis Yatoo.nc (GraphQL)
-        3. Convertit et valide via RawListing
-        4. Traite via IngestionPipeline (Cleaner + Enricher)
-        5. Stocke/met à jour dans DuckDB
-        6. Effectue l'audit de qualité et de santé du système
+        3. Moissonnage massif d'Immo.nc (immonc.com - 1 450+ annonces réelles)
+        4. Convertit et valide via RawListing
+        5. Traite via IngestionPipeline (Cleaner + Enricher)
+        6. Stocke/met à jour dans DuckDB
+        7. Effectue l'audit de qualité et de santé du système
         """
         start_time = datetime.now(timezone.utc)
         logger.info(f"=== DEMARRAGE DU SCAN MULTI-SOURCES REEL (Pages: 1 à {max_pages}) ===")
@@ -412,6 +724,11 @@ class LiveNCScraper:
                     rl = self.parse_yatoo_item_to_raw_listing(it, category=y_cat)
                     if rl:
                         all_raw_listings.append(rl)
+
+        # 3. SCAN MASSIF D'IMMO.NC (IMMONC.COM)
+        if include_immonc and (not source_filter or "immonc" in source_filter.lower()):
+            immonc_listings = self.fetch_immonc_mass_listings(max_pages=max_pages, include_rentals=include_rentals)
+            all_raw_listings.extend(immonc_listings)
 
         if source_filter:
             all_raw_listings = [

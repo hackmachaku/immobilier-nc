@@ -167,7 +167,8 @@ def test_rental_price_parsing_and_differentiation(cleaner):
 def test_multi_photos_pipeline(tmp_path, cleaner):
     import json
     from src.ingestion.live_scraper import LiveNCScraper
-    scraper = LiveNCScraper()
+    from src.storage.database import PropertyDatabase
+    scraper = LiveNCScraper(db=PropertyDatabase(db_path=tmp_path / "test_pipeline.duckdb"))
 
     # Annonce avec 3 photos
     item_multi = {
