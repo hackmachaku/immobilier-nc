@@ -5,6 +5,8 @@ ENV/
 
 # Large binaries & temporary tools
 cloudflared.exe
+*.zip
+migration_bundle_*.zip
 
 # Python bytecode & cache
 __pycache__/
