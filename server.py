@@ -196,6 +196,15 @@ def safe_int(val, default=0):
         return default
 
 
+def safe_bool(val, default=False) -> bool:
+    if pd.isna(val) or val is None:
+        return default
+    try:
+        return bool(val)
+    except Exception:
+        return default
+
+
 def sanitize_for_json(obj):
     """Garantit l'absence totale de valeurs NaN/Inf non conformes au standard JSON (RFC 8259)."""
     if isinstance(obj, float):
@@ -315,6 +324,8 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
             return self.handle_get_agencies()
         elif path == "/api/audit":
             return self.handle_get_audit()
+        elif path == "/api/audit/completeness":
+            return self.handle_get_completeness_audit()
         elif path == "/api/logs":
             return self.handle_get_logs()
 
@@ -622,7 +633,7 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     is_ai_enriched = False
                     ai_model_name = None
                 is_dock = prop_type == "DOCK"
-                has_sea_view = bool(row.get("has_sea_view"))
+                has_sea_view = safe_bool(row.get("has_sea_view"))
 
                 if not img_url:
                     if is_dock:
@@ -886,10 +897,41 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     features.append(f"Varangue {surf_var:.0f} m²")
                 if has_sea_view:
                     features.append("Vue mer")
-                if row.get("has_pool"):
+                if safe_bool(row.get("has_pool")):
                     features.append("Piscine")
-                if row.get("has_air_conditioning"):
+                if safe_bool(row.get("has_air_conditioning")):
                     features.append("Climatisé")
+
+                raw_comp = row.get("complementary_details_json")
+                comp_details = None
+                if pd.notna(raw_comp) and raw_comp:
+                    try:
+                        comp_details = json.loads(str(raw_comp)) if isinstance(raw_comp, str) else raw_comp
+                    except Exception:
+                        comp_details = None
+
+                charges_m = safe_int(row.get("charges_mensuelles_xpf"), None)
+                if charges_m and charges_m <= 0:
+                    charges_m = None
+                etage_val = safe_str(row.get("etage")) or None
+                has_elev = safe_bool(row.get("has_elevator"))
+                parking_det = safe_str(row.get("parking_detail")) or None
+                parkings_cnt = safe_int(row.get("parkings"), None)
+                if parkings_cnt and parkings_cnt <= 0:
+                    parkings_cnt = None
+                direct_neg = safe_str(row.get("direct_negotiator")) or None
+                direct_ph = safe_str(row.get("direct_phone")) or None
+
+                if charges_m:
+                    features.append(f"Charges {charges_m:,.0f} F/m".replace(",", " "))
+                if etage_val:
+                    features.append(f"Étage {etage_val}" if "étage" not in etage_val.lower() else etage_val)
+                if has_elev:
+                    features.append("Ascenseur")
+                if parking_det:
+                    features.append(parking_det)
+                elif parkings_cnt:
+                    features.append(f"{parkings_cnt} parking{'s' if parkings_cnt > 1 else ''}")
 
                 # Géolocalisation haute précision et datation des photos
                 lat_p = safe_float(row.get("lat_precise"), None)
@@ -1007,6 +1049,14 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     "surfaceHabitable": surf_hab,
                     "surfaceTerrain": surf_ter,
                     "surfaceVarangue": surf_var,
+                    "chargesMensuelles": charges_m,
+                    "etage": etage_val,
+                    "hasElevator": has_elev,
+                    "parkingDetail": parking_det,
+                    "parkings": parkings_cnt,
+                    "complementaryDetails": comp_details,
+                    "directNegotiator": direct_neg,
+                    "directPhone": direct_ph,
                     "rooms": raw_rooms if raw_rooms > 0 else None,
                     "bedrooms": raw_bedrooms if raw_bedrooms > 0 else None,
                     "roomType": room_type,
@@ -1412,6 +1462,17 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
             auditor = PipelineAuditor()
             report = auditor.run_full_audit()
             self._send_json({"success": True, "audit": report})
+
+    def handle_get_completeness_audit(self):
+        """Renvoie le rapport d'audit de complétude et d'intégrité haute fidélité."""
+        try:
+            from src.utils.completeness_auditor import CompletenessAuditor
+            auditor = CompletenessAuditor()
+            res = auditor.audit_database(limit=300)
+            self._send_json({"success": True, "report": res})
+        except Exception as e:
+            logger.error(f"Erreur audit complétude : {e}")
+            self._send_json({"success": False, "error": str(e)}, status_code=500)
 
     def handle_get_logs(self):
         """Renvoie les 40 dernières lignes du journal d'exécution."""

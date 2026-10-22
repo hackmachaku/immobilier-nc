@@ -79,6 +79,12 @@ class PropertyDatabase:
             ALTER TABLE listings ADD COLUMN IF NOT EXISTS precision_detail VARCHAR;
             ALTER TABLE listings ADD COLUMN IF NOT EXISTS photo_date_taken TIMESTAMP;
             ALTER TABLE listings ADD COLUMN IF NOT EXISTS photo_age_months INTEGER;
+            ALTER TABLE listings ADD COLUMN IF NOT EXISTS etage VARCHAR;
+            ALTER TABLE listings ADD COLUMN IF NOT EXISTS has_elevator BOOLEAN;
+            ALTER TABLE listings ADD COLUMN IF NOT EXISTS parking_detail VARCHAR;
+            ALTER TABLE listings ADD COLUMN IF NOT EXISTS complementary_details_json VARCHAR;
+            ALTER TABLE listings ADD COLUMN IF NOT EXISTS direct_negotiator VARCHAR;
+            ALTER TABLE listings ADD COLUMN IF NOT EXISTS direct_phone VARCHAR;
 
             -- Table dédiée à l'historique complet des variations de prix
             CREATE TABLE IF NOT EXISTS listing_price_history (
@@ -184,6 +190,12 @@ class PropertyDatabase:
                 "precision_detail": getattr(l, "precision_detail", None),
                 "photo_date_taken": getattr(l, "photo_date_taken", None),
                 "photo_age_months": getattr(l, "photo_age_months", None),
+                "etage": getattr(l, "etage", None),
+                "has_elevator": getattr(l, "has_elevator", False),
+                "parking_detail": getattr(l, "parking_detail", None),
+                "complementary_details_json": getattr(l, "complementary_details_json", None),
+                "direct_negotiator": getattr(l, "direct_negotiator", None),
+                "direct_phone": getattr(l, "direct_phone", None),
             })
 
         df = pd.DataFrame(records)
@@ -289,7 +301,13 @@ class PropertyDatabase:
                 precision_level = COALESCE(EXCLUDED.precision_level, listings.precision_level),
                 precision_detail = COALESCE(EXCLUDED.precision_detail, listings.precision_detail),
                 photo_date_taken = COALESCE(EXCLUDED.photo_date_taken, listings.photo_date_taken),
-                photo_age_months = COALESCE(EXCLUDED.photo_age_months, listings.photo_age_months);
+                photo_age_months = COALESCE(EXCLUDED.photo_age_months, listings.photo_age_months),
+                etage = COALESCE(EXCLUDED.etage, listings.etage),
+                has_elevator = COALESCE(EXCLUDED.has_elevator, listings.has_elevator),
+                parking_detail = COALESCE(EXCLUDED.parking_detail, listings.parking_detail),
+                complementary_details_json = COALESCE(EXCLUDED.complementary_details_json, listings.complementary_details_json),
+                direct_negotiator = COALESCE(EXCLUDED.direct_negotiator, listings.direct_negotiator),
+                direct_phone = COALESCE(EXCLUDED.direct_phone, listings.direct_phone);
             """)
 
     def query(self, sql: str) -> pd.DataFrame:

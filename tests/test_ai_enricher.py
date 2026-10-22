@@ -185,3 +185,42 @@ def test_mojibake_and_agency_normalization():
     assert normalize_agency_name("caledonienne d") == "Calédonienne d'Immobilier"
     assert fix_mojibake("bureau aménagé au 4ème étage") == "bureau aménagé au 4ème étage"
     assert "Â" not in fix_mojibake("immeuble roger berardÂ  au 4ème étage")
+
+
+def test_sanitize_ai_technical_specs_grounding():
+    """Vérifie l'ancrage et la détection haute fidélité des spécifications techniques."""
+    from src.processing.ai_enricher import _sanitize_ai_technical_specs
+
+    desc = (
+        "Appartement F2 au dernier étage d'une résidence sécurisée avec ascenseur. "
+        "Large terrasse couverte de 14 m². Place de parking couverte sécurisée. "
+        "Charges de copropriété : 12 000 F/mois. Bon standing."
+    )
+
+    # 1. Spécifications conformes retournées par l'IA
+    raw_specs = {
+        "charges_mensuelles_xpf": 12000,
+        "etage": "Dernier étage",
+        "has_elevator": True,
+        "parking_detail": "Place de parking couverte",
+        "surface_terrasse_m2": 14.0,
+        "standing": "Bon standing"
+    }
+    clean = _sanitize_ai_technical_specs(raw_specs, raw_description=desc)
+    assert clean["charges_mensuelles_xpf"] == 12000
+    assert clean["etage"] == "Dernier étage"
+    assert clean["has_elevator"] is True
+    assert clean["surface_terrasse_m2"] == 14.0
+    assert "couverte" in clean["parking_detail"].lower()
+    assert clean["standing"] == "Bon standing"
+
+    # 2. Spécifications hallucinées par l'IA (50 000 F de charges inexistantes)
+    fake_specs = {
+        "charges_mensuelles_xpf": 50000,
+        "surface_terrasse_m2": 85.0
+    }
+    clean_fake = _sanitize_ai_technical_specs(fake_specs, raw_description=desc)
+    # 50 000 doit être rejeté et remplacé par les 12 000 réels trouvés dans la description
+    assert clean_fake["charges_mensuelles_xpf"] == 12000
+    # 85 m² doit être rejeté et remplacé par 14.0 m² réel
+    assert clean_fake["surface_terrasse_m2"] == 14.0

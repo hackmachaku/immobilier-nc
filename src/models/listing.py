@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, computed_field
 
 from src.config.settings import XPF_TO_EUR_RATE
@@ -46,6 +46,12 @@ class RawListing(BaseModel):
     image_url: Optional[str] = None
     images_json: Optional[str] = None
     facilities: Optional[List[str]] = None
+    raw_charges: Optional[str] = None
+    raw_terrace: Optional[str] = None
+    raw_floor: Optional[str] = None
+    complementary_details: Optional[Dict[str, Any]] = None
+    direct_negotiator: Optional[str] = None
+    direct_phone: Optional[str] = None
     published_at: Optional[datetime] = None
     created_at_declared: Optional[datetime] = None
     extracted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -89,6 +95,14 @@ class CleanedListing(BaseModel):
     is_secured: bool = False
     is_furnished: Optional[bool] = None
     standing_estime: Optional[str] = None
+
+    # Étage, ascenseur, annexes et détails complémentaires
+    etage: Optional[str] = None
+    has_elevator: bool = False
+    parking_detail: Optional[str] = None
+    complementary_details_json: Optional[str] = None
+    direct_negotiator: Optional[str] = None
+    direct_phone: Optional[str] = None
 
     # Données temporelles et métadonnées
     agency_name: Optional[str] = None

@@ -18,6 +18,7 @@ from src.storage.database import PropertyDatabase
 from src.utils.logger import get_logger
 from src.utils.log_analyzer import PipelineAuditor
 from src.domain.agencies_directory import resolve_agency_name
+from src.ingestion.detail_parser import parse_immonc_detail_html
 
 logger = get_logger("live_scraper")
 
@@ -381,7 +382,10 @@ class LiveNCScraper:
         try:
             resp = requests.get(url, headers=self.HEADERS_IMMONC, timeout=25, verify=False)
             resp.raise_for_status()
-            html = resp.content.decode("windows-1252", errors="ignore")
+            try:
+                html = resp.content.decode("utf-8")
+            except Exception:
+                html = resp.content.decode("windows-1252", errors="ignore")
             matches = re.findall(r'data:\s*(\{.*?"id_annonce".*?\})\s*\}', html)
             items = []
             for m in matches:
@@ -464,7 +468,10 @@ class LiveNCScraper:
         try:
             resp = requests.get(url, headers=self.HEADERS_IMMONC, timeout=14, verify=False)
             resp.raise_for_status()
-            raw_html = resp.content.decode("windows-1252", errors="ignore")
+            try:
+                raw_html = resp.content.decode("utf-8")
+            except Exception:
+                raw_html = resp.content.decode("windows-1252", errors="ignore")
 
             card_chunks = re.split(r'(?=<div[^>]*class=["\'][^"\']*search-result-card[^"\']*["\'][^>]*id=["\']gcli\d+["\'])', raw_html)
             items = []
@@ -526,15 +533,106 @@ class LiveNCScraper:
             logger.error(f"Erreur de connexion à Immo.nc (page {page}, {deal_type}) : {e}")
             return []
 
-    def parse_immonc_item_to_raw_listing(self, item: Dict[str, Any], deal_type: str = "vente") -> Optional[RawListing]:
-        """Convertit une annonce Immo.nc en RawListing standardisé."""
+    def fetch_immonc_detail(self, url: str) -> Dict[str, Any]:
+        """Télécharge la page de détail complète d'une annonce Immo.nc et extrait 100% des données."""
+        if not url:
+            return {}
+        try:
+            resp = requests.get(url, headers=self.HEADERS_IMMONC, timeout=15, verify=False)
+            resp.raise_for_status()
+            try:
+                html = resp.content.decode("utf-8")
+            except Exception:
+                html = resp.content.decode("windows-1252", errors="ignore")
+            return parse_immonc_detail_html(html, url=url)
+        except Exception as e:
+            logger.warning(f"Erreur de récupération fiche détaillée Immo.nc ({url}) : {e}")
+            return {}
+
+    def hydrate_raw_listing(self, rl: RawListing) -> RawListing:
+        """Hydrate un RawListing existant avec les données haute fidélité de sa page détaillée."""
+        if not rl or rl.source != "immonc" or not rl.url:
+            return rl
+
+        detail = self.fetch_immonc_detail(rl.url)
+        if not detail:
+            return rl
+
+        # 1. Description complète non tronquée
+        if detail.get("full_description"):
+            rl.description = detail["full_description"]
+
+        # 2. Surfaces et charges réelles
+        if detail.get("surface_habitable_m2") is not None:
+            rl.raw_surface = str(detail["surface_habitable_m2"])
+        if detail.get("surface_terrasse_m2") is not None:
+            rl.raw_terrace = str(detail["surface_terrasse_m2"])
+        if detail.get("charges_mensuelles_xpf") is not None:
+            rl.raw_charges = str(detail["charges_mensuelles_xpf"])
+        if detail.get("etage") is not None:
+            rl.raw_floor = str(detail["etage"])
+
+        # 3. Détails complémentaires & Contact direct négociateur
+        if detail.get("complementary_details"):
+            rl.complementary_details = detail["complementary_details"]
+        if detail.get("direct_negotiator"):
+            rl.direct_negotiator = detail["direct_negotiator"]
+        if detail.get("direct_phone"):
+            rl.direct_phone = detail["direct_phone"]
+
+        # 4. Équipements
+        facs = rl.facilities or []
+        if detail.get("has_sea_view") and "vue_mer" not in facs:
+            facs.append("vue_mer")
+        if detail.get("has_air_conditioning") and "climatisation" not in facs:
+            facs.append("climatisation")
+        if detail.get("has_pool") and "piscine" not in facs:
+            facs.append("piscine")
+        if detail.get("has_elevator") and "ascenseur" not in facs:
+            facs.append("ascenseur")
+        rl.facilities = facs if facs else None
+
+        # 5. Photos HD additionnelles
+        if detail.get("photos"):
+            existing_photos = []
+            if rl.images_json:
+                try:
+                    existing_photos = json.loads(rl.images_json)
+                except Exception:
+                    existing_photos = []
+            for p in detail["photos"]:
+                if p not in existing_photos:
+                    existing_photos.append(p)
+            if existing_photos:
+                rl.images_json = json.dumps(existing_photos)
+                if not rl.image_url:
+                    rl.image_url = existing_photos[0]
+
+        return rl
+
+    def parse_immonc_item_to_raw_listing(
+        self,
+        item: Dict[str, Any],
+        deal_type: str = "vente",
+        detail_data: Optional[Dict[str, Any]] = None
+    ) -> Optional[RawListing]:
+        """Convertit une annonce Immo.nc en RawListing standardisé avec enrichissement haute fidélité."""
         try:
             item_id = str(item.get("id"))
             if not item_id:
                 return None
 
+            # Si le dictionnaire item contient déjà detail_data
+            if detail_data is None and isinstance(item.get("detail_data"), dict):
+                detail_data = item.get("detail_data")
+
             title = str(item.get("title") or "Bien immobilier").strip()
-            desc = str(item.get("description") or "").strip()
+            # Si detail_data est fourni, utiliser la description complète non tronquée
+            if detail_data and detail_data.get("full_description"):
+                desc = str(detail_data["full_description"]).strip()
+            else:
+                desc = str(item.get("description") or "").strip()
+
             url = str(item.get("url") or f"https://www.immonc.com/annonce/{deal_type}/{item_id}").strip()
             loc_raw = str(item.get("location_raw") or "").strip()
             price_xpf = item.get("price_xpf", 0)
@@ -542,7 +640,12 @@ class LiveNCScraper:
             is_loc = deal_type.lower() == "location" or "location" in url.lower() or "loyer" in title.lower()
             price_str = f"{price_xpf} F CFP/mois" if is_loc else f"{price_xpf} F CFP"
 
-            photos = item.get("photos") or []
+            photos = list(item.get("photos") or [])
+            if detail_data and detail_data.get("photos"):
+                for p in detail_data["photos"]:
+                    if p not in photos:
+                        photos.append(p)
+
             photo_url = photos[0] if photos else None
             images_json = json.dumps(photos) if photos else None
 
@@ -574,20 +677,44 @@ class LiveNCScraper:
 
             facs = []
             lower_text = f"{title} {desc} {url}".lower()
-            if "piscine" in lower_text:
+            if "piscine" in lower_text or (detail_data and detail_data.get("has_pool")):
                 facs.append("piscine")
-            if "clim" in lower_text:
+            if "clim" in lower_text or (detail_data and detail_data.get("has_air_conditioning")):
                 facs.append("climatisation")
-            if "vue mer" in lower_text or "vue lagon" in lower_text:
+            if "vue mer" in lower_text or "vue lagon" in lower_text or (detail_data and detail_data.get("has_sea_view")):
                 facs.append("vue_mer")
             if "meubl" in lower_text and not ("non meubl" in lower_text or "non-meubl" in lower_text):
                 facs.append("meuble")
+            if detail_data and detail_data.get("has_elevator"):
+                facs.append("ascenseur")
 
             agency = resolve_agency_name(
                 raw_name=item.get("agency_name"),
                 raw_mail=item.get("agency_email"),
                 text_blob=f"{title} {desc}"
             )
+
+            # Champs haute fidélité issus du détail
+            raw_surface = None
+            raw_terrace = None
+            raw_charges = None
+            raw_floor = None
+            comp_details = None
+            direct_neg = None
+            direct_ph = None
+
+            if detail_data:
+                if detail_data.get("surface_habitable_m2") is not None:
+                    raw_surface = str(detail_data["surface_habitable_m2"])
+                if detail_data.get("surface_terrasse_m2") is not None:
+                    raw_terrace = str(detail_data["surface_terrasse_m2"])
+                if detail_data.get("charges_mensuelles_xpf") is not None:
+                    raw_charges = str(detail_data["charges_mensuelles_xpf"])
+                if detail_data.get("etage") is not None:
+                    raw_floor = str(detail_data["etage"])
+                comp_details = detail_data.get("complementary_details")
+                direct_neg = detail_data.get("direct_negotiator")
+                direct_ph = detail_data.get("direct_phone")
 
             return RawListing(
                 source="immonc",
@@ -596,8 +723,8 @@ class LiveNCScraper:
                 title=title,
                 description=desc,
                 raw_price=price_str,
-                raw_surface=None,
-                raw_rooms=None,
+                raw_surface=raw_surface,
+                raw_rooms=str(detail_data.get("rooms")) if detail_data and detail_data.get("rooms") else None,
                 raw_location=loc_raw,
                 transaction_type_declared="Location" if is_loc else "Vente",
                 property_type_declared=prop_type,
@@ -605,17 +732,29 @@ class LiveNCScraper:
                 image_url=photo_url,
                 images_json=images_json,
                 facilities=facs if facs else None,
+                raw_charges=raw_charges,
+                raw_terrace=raw_terrace,
+                raw_floor=raw_floor,
+                complementary_details=comp_details,
+                direct_negotiator=direct_neg,
+                direct_phone=direct_ph,
                 extracted_at=datetime.now(timezone.utc),
             )
         except Exception as e:
             logger.warning(f"Erreur conversion Immo.nc item {item.get('id')} : {e}")
             return None
 
-    def fetch_immonc_mass_listings(self, max_pages: int = 10, include_rentals: bool = True) -> List[RawListing]:
+    def fetch_immonc_mass_listings(
+        self,
+        max_pages: int = 10,
+        include_rentals: bool = True,
+        hydrate_details: bool = True
+    ) -> List[RawListing]:
         """
         Moissonnage massif et hybride d'Immo.nc :
         1. Capture instantanée des flux cartographiques (1 450+ annonces avec coordonnées et contacts).
-        2. Moissonnage multithreadé des pages de résultats pour enrichir les fiches de descriptions complètes et de photos HD multiples.
+        2. Moissonnage multithreadé des pages de résultats.
+        3. Hydratation haute fidélité multithreadée des fiches détaillées (charges, terrasses, étage, ascenseur, descriptif intégral).
         """
         logger.info("=== DEMARRAGE DU MOISSONNAGE MASSIF IMMO.NC ===")
         listings_map: Dict[str, RawListing] = {}
@@ -649,25 +788,52 @@ class LiveNCScraper:
                 if include_rentals:
                     tasks.append(ex.submit(self.fetch_immonc_raw_items, "location", p))
 
+            page_listings: List[RawListing] = []
             for t in tasks:
                 try:
                     for it in t.result():
                         deal = it.get("deal_type", "vente")
                         rl = self.parse_immonc_item_to_raw_listing(it, deal_type=deal)
                         if rl:
-                            if rl.source_id in listings_map:
-                                existing = listings_map[rl.source_id]
-                                if rl.description and len(rl.description) > len(existing.description or ""):
-                                    existing.description = rl.description
-                                if rl.images_json and len(rl.images_json) > len(existing.images_json or ""):
-                                    existing.images_json = rl.images_json
-                                    existing.image_url = rl.image_url
-                                if rl.facilities:
-                                    existing.facilities = rl.facilities
-                            else:
-                                listings_map[rl.source_id] = rl
+                            page_listings.append(rl)
                 except Exception as e:
                     logger.warning(f"Erreur traitement page Immo.nc : {e}")
+
+        # 3. Hydratation multithreadée des fiches détaillées pour zéro perte de données
+        if hydrate_details and page_listings:
+            logger.info(f"Hydratation haute fidélité de {len(page_listings)} annonces Immo.nc...")
+            with ThreadPoolExecutor(max_workers=8) as ex_hydr:
+                hydrated_results = list(ex_hydr.map(self.hydrate_raw_listing, page_listings))
+        else:
+            hydrated_results = page_listings
+
+        # Fusion des annonces hydratées dans le dictionnaire
+        for rl in hydrated_results:
+            if rl.source_id in listings_map:
+                existing = listings_map[rl.source_id]
+                if rl.description and len(rl.description) > len(existing.description or ""):
+                    existing.description = rl.description
+                if rl.raw_surface:
+                    existing.raw_surface = rl.raw_surface
+                if rl.raw_terrace:
+                    existing.raw_terrace = rl.raw_terrace
+                if rl.raw_charges:
+                    existing.raw_charges = rl.raw_charges
+                if rl.raw_floor:
+                    existing.raw_floor = rl.raw_floor
+                if rl.complementary_details:
+                    existing.complementary_details = rl.complementary_details
+                if rl.direct_negotiator:
+                    existing.direct_negotiator = rl.direct_negotiator
+                if rl.direct_phone:
+                    existing.direct_phone = rl.direct_phone
+                if rl.images_json and len(rl.images_json) > len(existing.images_json or ""):
+                    existing.images_json = rl.images_json
+                    existing.image_url = rl.image_url
+                if rl.facilities:
+                    existing.facilities = rl.facilities
+            else:
+                listings_map[rl.source_id] = rl
 
         all_listings = list(listings_map.values())
         logger.info(f"=== MOISSONNAGE IMMO.NC TERMINE : {len(all_listings)} annonces complètes prêtes pour ingestion ===")

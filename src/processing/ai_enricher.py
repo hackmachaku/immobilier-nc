@@ -42,21 +42,30 @@ HARDWARE_SPECS = {
 }
 
 DEFAULT_SYSTEM_PROMPT = (
-    "Tu es un moteur d'intelligence sémantique dédié à l'immobilier en Nouvelle-Calédonie.\n"
-    "Ta mission est d'extraire les contacts réels et de ventiler les caractéristiques d'une annonce dans des rubriques structurées.\n\n"
-    "RÈGLES STRICTES D'EXTRACTION & D'ANCRAGE :\n"
-    "1. Extraire les contacts réels de négociateurs (prénom, nom, mobile, email) dans 'direct_contacts'. "
-    "Les mobiles calédoniens ont 6 chiffres et commencent par 7, 8 ou 9 (ex: 98.72.66, 79.40.01). Les fixes commencent par 2, 3 ou 4.\n"
-    "2. VÉRIFICATION STRICTE D'ANCRAGE : N'extraire QUE des informations EXPLICITEMENT présentes dans le texte ou les métadonnées fournies. "
-    "Ne JAMAIS inventer de personnes, de téléphones ou d'équipements absents de l'annonce, et ne JAMAIS recopier les exemples de format.\n"
-    "3. Si l'annonce indique 'contactez l'agence au XX.XX.XX' sans nommer de négociateur particulier, attribuer ce contact à l'agence : "
-    "name = le nom de l'agence (champ 'agency'), role = 'Agence', phone = le téléphone mentionné.\n"
-    "4. Si aucun contact n'est mentionné dans le texte ni dans les métadonnées, 'direct_contacts' doit être une liste vide [].\n"
-    "5. Pour les biens professionnels (bureau, dock, local commercial, commerce, entrepôt), utiliser obligatoirement "
-    "la rubrique 'Bureaux & Espaces professionnels' et JAMAIS 'Espace Nuit'.\n"
-    "6. Classer les docks, réserves et parkings dans 'Stationnement & Logistique'.\n"
-    "7. Dans les sections, 'items' doit être une liste de faits réels extraits du texte. Ne jamais inventer de pièces ou surfaces.\n"
-    "8. Répondre EXCLUSIVEMENT en JSON valide conforme au schéma attendu, sans aucun texte introductif ni conclusion."
+    "Tu es le moteur d'intelligence sémantique de référence pour l'immobilier en Nouvelle-Calédonie (Sentinel ImmoNC).\n"
+    "Ta mission est d'analyser l'annonce pour en extraire avec une fidélité absolue les contacts réels, les spécifications techniques quantifiées et la ventilation ordonnée des caractéristiques.\n\n"
+    "RÈGLES STRICTES D'EXTRACTION & D'ANCRAGE :\n\n"
+    "1. CONTACTS & NÉGOCIATEURS DIRECTS ('direct_contacts') :\n"
+    "- Négociateur dédié : Si une personne physique est nommée (ex: 'Florian au 75.02.30', 'Laurent NGUYEN au 289.888', 'Manu 98.72.66'), extraire son prénom/nom, role='Négociateur', et son numéro.\n"
+    "- Contact Agence : Si le texte indique 'contactez l'agence au XX.XX.XX' sans nommer de négociateur particulier, attribuer ce contact à l'agence : name = le nom de l'agence (champ 'agency'), role='Agence', phone = le numéro mentionné.\n"
+    "- Numérotation NC (OPT) : 6 chiffres (mobiles: 7x, 8x, 9x | fixes: 2x, 3x, 4x | verts: 05). Formats courants : 75.02.30, 284.282, 98 72 66, 0 98.72.66.\n"
+    "- Si les deux (négociateur et agence) sont identifiés, renvoyer les deux fiches distinctes.\n"
+    "- Si aucun contact n'est mentionné, 'direct_contacts' doit être une liste vide [].\n"
+    "- ANCRAGE STRICT : N'extraire QUE des personnes et numéros EXPLICITEMENT présents. ZÉRO hallucination.\n\n"
+    "2. SPÉCIFICATIONS TECHNIQUES QUANTIFIÉES ('technical_specs') :\n"
+    "- charges_mensuelles_xpf : Montant entier des charges de copropriété en Francs Pacifique (ex: 'charges 12 000 F/mois' -> 12000, 'copro 15.000 XPF' -> 15000), ou null si non mentionné.\n"
+    "- etage : Étage descriptif (ex: 'Dernier étage', 'Rez-de-chaussée', '2ème étage'), ou null si absent.\n"
+    "- has_elevator : true si ascenseur mentionné, false si explicitement sans ascenseur, null sinon.\n"
+    "- parking_detail : Description précise du stationnement (ex: '1 place couverte sécurisée', '2 carports', 'Garage fermé / box', '8 places de stationnement'), ou null.\n"
+    "- surface_terrasse_m2 : Nombre flottant pour la surface de terrasse, varangue ou deck en m² (ex: 14.0, 40.0), ou null.\n"
+    "- standing : Appréciation explicite du bien (ex: 'Bon standing', 'Haut standing', 'Résidence récente'), ou null.\n\n"
+    "3. TAXONOMIE ADAPTÉE À LA NATURE DU BIEN ('sections') :\n"
+    "- Bien Résidentiel (Appartement, Villa, Maison) : 'pieces_de_vie' (Séjour & Cuisine), 'espace_nuit' (Chambres & SDE), 'exterieurs' (Terrasse, Jardin, Vue, Piscine), 'stationnement' (Parking, Garage, Cellier), 'copropriete' (Charges, Étage, Syndic).\n"
+    "- Bien Commercial / Professionnel (Bureau, Dock, Local) : 'bureaux' (Bureaux & Espaces pros), 'stockage' (Dock, Réserve, Hauteur sous plafond), 'stationnement' (Parkings clients/pro), 'conditions' (Bail, Loyer, Charges). INTERDICTION STRICTE d'utiliser 'espace_nuit' pour un bien professionnel !\n"
+    "- Terrain : 'terrain' (Superficie en ares/m², viabilisation, vue, pente, zonage PUD).\n"
+    "- Dans chaque rubrique, 'items' doit être une liste de faits réels extraits du texte. Ne jamais inventer de pièces ou caractéristiques.\n\n"
+    "4. FORMAT DE SORTIE :\n"
+    "Répondre EXCLUSIVEMENT en JSON strict conforme au schéma attendu, sans balisage markdown ni aucun texte avant ou après."
 )
 
 
@@ -72,40 +81,55 @@ def get_ai_config() -> Dict[str, Any]:
     default_cfg = {
         "provider": "ollama",
         "ollama_url": "http://localhost:11434",
-        "model": "qwen2.5:3b",
+        "model": "qwen2.5:1.5b",
         "temperature": 0.1,
-        "timeout_seconds": 4.0,
+        "timeout_seconds": 40.0,
         "active_preset": "standard",
         "system_prompt": DEFAULT_SYSTEM_PROMPT,
         "presets": {
             "standard": {
-                "name": "🎯 Standard Immo NC",
-                "description": "Extraction universelle des contacts OPT et répartition équilibrée en 7 rubriques standardisées.",
+                "name": "🎯 Standard Immo NC (Haute Fidélité)",
+                "description": "Extraction exhaustive des contacts direct/agence, spécifications techniques (charges, étage, parking) et 7 rubriques équilibrées.",
                 "temperature": 0.1,
                 "prompt": DEFAULT_SYSTEM_PROMPT
             },
             "commercial": {
                 "name": "🏢 Spécial Tertiaire, Docks & Commerces",
-                "description": "Optimisé pour la détection des surfaces utiles, hauteurs sous plafond des docks et parkings clients.",
+                "description": "Optimisé pour bureaux, surfaces utiles, hauteurs sous plafond des docks, puissance électrique et parkings professionnels (zéro espace nuit).",
                 "temperature": 0.1,
                 "prompt": (
-                    "Tu es un expert en immobilier d'entreprise et commercial en Nouvelle-Calédonie.\n"
+                    "Tu es un expert en immobilier d'entreprise, commercial et logistique en Nouvelle-Calédonie.\n"
                     "RÈGLES STRICTES :\n"
-                    "1. Extraire le contact direct du commercialisateur (nom, mobile NC, email) dans 'direct_contacts'.\n"
-                    "2. Isoler les surfaces spécifiques : bureaux (m²), dock/réserve (m² avec hauteur), showroom, terrain.\n"
-                    "3. Utiliser les rubriques 'Implantation & Visibilité commerciale', 'Bureaux & Espaces professionnels', "
-                    "'Stationnement & Logistique' et 'Modalités & Conditions'.\n"
-                    "4. Répondre EXCLUSIVEMENT en JSON valide conforme au schéma."
+                    "1. Extraire le contact direct du négociateur/commercialisateur ou de l'agence dans 'direct_contacts' (formats NC 7x/8x/9x ou 2x/3x/4x).\n"
+                    "2. Isoler les spécifications techniques dans 'technical_specs' : charges_mensuelles_xpf, etage, has_elevator, parking_detail (ex: places clientes, quai).\n"
+                    "3. Rubriques adaptées dans 'sections' : 'Bureaux & Espaces professionnels' (clé: bureaux), 'Stockage, Dock & Logistique' (clé: stockage, avec hauteur sous plafond), 'Stationnement & Accès', 'Modalités & Conditions' (bail 3/6/9, loyer).\n"
+                    "4. INTERDICTION ABSOLUE d'utiliser la rubrique 'Espace Nuit' pour un bien d'entreprise.\n"
+                    "5. Répondre EXCLUSIVEMENT en JSON strict conforme au schéma."
                 )
             },
             "contacts_only": {
-                "name": "⚡ Extraction Rapide des Contacts",
-                "description": "Extraction prioritaire des négociateurs, numéros de téléphone et coordonnées directes.",
+                "name": "⚡ Extraction Rapide des Contacts & Négociateurs",
+                "description": "Isolation prioritaire des négociateurs dédiés, numéros mobiles OPT (7x/8x/9x), fixes et coordonnées directes.",
                 "temperature": 0.0,
                 "prompt": (
                     "Tu es un analyseur ultra-rapide de coordonnées immobilières pour la Nouvelle-Calédonie.\n"
-                    "Extrais tous les contacts humains mentionnés : prénom, nom, téléphone fixe (2x.xx.xx) ou mobile (7x/8x/9x), WhatsApp et email.\n"
+                    "Extrais tous les contacts réels de l'annonce dans 'direct_contacts' :\n"
+                    "- Négociateur physique si nommé (ex: Florian, Sophie, Laurent NGUYEN) avec role='Négociateur'.\n"
+                    "- Agence si mentionnée (ex: 'contactez l'agence au...') avec role='Agence'.\n"
+                    "- Numéros de téléphone au format calédonien à 6 chiffres (+687).\n"
                     "Formate la réponse sous forme de JSON strict."
+                )
+            },
+            "investor": {
+                "name": "💰 Analyse Investisseur & Rendement",
+                "description": "Met l'accent sur les charges de copropriété, travaux, défiscalisation (loi Girardin/local) et rentabilité locative.",
+                "temperature": 0.2,
+                "prompt": (
+                    "Tu es un conseiller en investissement immobilier en Nouvelle-Calédonie.\n"
+                    "Analyse cette annonce sous l'angle du rendement financier :\n"
+                    "1. Isole impérativement dans 'technical_specs' les charges_mensuelles_xpf, l'étage, l'ascenseur et le parking.\n"
+                    "2. Ventile dans 'sections' les éléments de valorisation : loyer potentiel, standing de la copropriété, travaux éventuels et cadre fiscal.\n"
+                    "3. Réponds au format JSON strict."
                 )
             }
         }
@@ -262,13 +286,15 @@ def _get_cached_enrichment(listing_id: str, input_hash: str) -> Optional[Dict[st
         """, [listing_id, input_hash]).fetchone()
         con.close()
         if row:
+            raw_resp = json.loads(row[4]) if row[4] else {}
             return {
                 "cached": True,
                 "model": row[0],
                 "enriched_at": str(row[1]),
                 "direct_contacts": json.loads(row[2]) if row[2] else [],
+                "technical_specs": raw_resp.get("technical_specs", {}),
                 "sections": json.loads(row[3]) if row[3] else [],
-                "raw_response": json.loads(row[4]) if row[4] else {},
+                "raw_response": raw_resp,
                 "latency_ms": row[5] or 1
             }
     except Exception:
@@ -434,7 +460,7 @@ def _sanitize_ai_contacts(
     return valid_contacts
 
 
-def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: str = "") -> List[Dict[str, Any]]:
+def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: str = "", property_type: str = "") -> List[Dict[str, Any]]:
     """
     Nettoie, aplatit et valide par ancrage (Grounding Check) les rubriques retournées par l'IA.
     Élimine les puces hallucinées issues du prompt template (ex: fausses surfaces ou pièces absentes).
@@ -535,14 +561,144 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
                     "items": [str(x) for x in bullets if str(x).strip()]
                 })
 
-    # Si après filtrage strict toutes les rubriques de l'IA étaient des hallucinations,
-    # bascule élégante vers le moteur Tier-1 déterministe pour garantir une fiche complète
+    # Filtrage de sécurité selon la nature du bien
+    is_commercial = "COMMERCIAL" in property_type.upper() or any(k in full_context for k in ("bureau", "dock", "local commercial", "entrepôt", "commerce", "professionnel"))
+    if is_commercial:
+        clean_sections = [cs for cs in clean_sections if "nuit" not in cs.get("key", "").lower() and "nuit" not in cs.get("title", "").lower() and "chambre" not in cs.get("title", "").lower()]
+
+    # Repli déterministe Tier-1 si nécessaire
+    t1_fallback = structure_description(raw_description, property_type="COMMERCIAL" if is_commercial else property_type)
+    t1_sections = t1_fallback.get("sections", [])
+
     valid_sections = [cs for cs in clean_sections if cs.get("title") and cs.get("items")]
     if not valid_sections and raw_description:
-        t1_fallback = structure_description(raw_description)
-        return t1_fallback.get("sections", [])
+        return t1_sections
+
+    if is_commercial:
+        titles_present = [cs["title"].lower() for cs in valid_sections]
+        for t1_s in t1_sections:
+            t1_title = t1_s["title"].lower()
+            if any(k in t1_title for k in ("bureau", "stationnement", "dock", "logistique")) and not any(k in t1_title for k in titles_present):
+                valid_sections.append(t1_s)
 
     return valid_sections
+
+
+def _sanitize_ai_technical_specs(raw_specs: Any, raw_description: str = "") -> Dict[str, Any]:
+    """
+    Valide et ancre les spécifications techniques (Tier-2 IA ou Tier-1 déterministe).
+    Vérifie l'absence d'hallucinations numériques et applique les règles calédoniennes.
+    """
+    import re
+    if not isinstance(raw_specs, dict):
+        raw_specs = {}
+
+    desc_clean = fix_mojibake(raw_description or "")
+    desc_lower = desc_clean.lower()
+
+    # 1. Charges de copropriété (XPF)
+    charges_raw = raw_specs.get("charges_mensuelles_xpf")
+    charges_val: Optional[int] = None
+    desc_digits = re.sub(r"[^\d]", "", desc_clean)
+    if charges_raw is not None:
+        try:
+            c_digits = re.sub(r"[^\d]", "", str(charges_raw))
+            if c_digits:
+                val = int(c_digits)
+                if 500 <= val <= 300_000 and c_digits in desc_digits:
+                    charges_val = val
+        except Exception:
+            charges_val = None
+    if charges_val is None:
+        m_chg = re.search(r"charges?\s*(?:mensuelles?|de\s+copropri[eé]t[eé]|copro)?\s*[:\s]?\s*(\d+[\d\s]*)(?:\.00)?\s*(?:f|xpf)?", desc_clean, re.I)
+        if m_chg:
+            c_digs = re.sub(r"[^\d]", "", m_chg.group(1))
+            if c_digs and int(c_digs) > 0:
+                charges_val = int(c_digs)
+
+    # 2. Étage
+    etage_raw = raw_specs.get("etage")
+    etage_val: Optional[str] = None
+    if etage_raw and isinstance(etage_raw, str):
+        etage_clean = etage_raw.strip()
+        if any(k in etage_clean.lower() for k in ("étage", "etage", "rdc", "rez", "dernier")):
+            if any(k in desc_lower for k in ("étage", "etage", "rdc", "rez", "dernier")):
+                etage_val = etage_clean
+    if not etage_val:
+        m_et = re.search(r"\b(dernier\s+[eé]tage|\d+(?:[eè]me|er)?\s+[eé]tage|rdc|rez[- ]de[- ]chauss[eé]e)\b", desc_clean, re.I)
+        if m_et:
+            etage_val = m_et.group(1).capitalize()
+
+    # 3. Ascenseur
+    has_elevator: Optional[bool] = None
+    elev_raw = raw_specs.get("has_elevator")
+    if elev_raw is True and "ascenseur" in desc_lower:
+        has_elevator = True
+    elif elev_raw is False and "sans ascenseur" in desc_lower:
+        has_elevator = False
+    elif "ascenseur" in desc_lower and "sans ascenseur" not in desc_lower:
+        has_elevator = True
+    elif "sans ascenseur" in desc_lower:
+        has_elevator = False
+
+    # 4. Stationnement / Parking
+    parking_raw = raw_specs.get("parking_detail")
+    parking_val: Optional[str] = None
+    if parking_raw and isinstance(parking_raw, str):
+        p_clean = parking_raw.strip()
+        if any(k in p_clean.lower() for k in ("parking", "stationnement", "garage", "box", "carport", "place")):
+            if any(k in desc_lower for k in ("parking", "stationnement", "garage", "box", "carport", "place")):
+                parking_val = p_clean
+    if not parking_val:
+        if "carport" in desc_lower:
+            parking_val = "Carport"
+        elif "garage" in desc_lower or "box" in desc_lower:
+            parking_val = "Garage fermé"
+        elif "place de parking couverte" in desc_lower or "parking couvert" in desc_lower:
+            parking_val = "Place couverte sécurisée"
+        elif "parking" in desc_lower or "stationnement" in desc_lower:
+            m_park = re.search(r"(\d+)\s*(?:places?|parkings?|stationnements?)", desc_lower)
+            parking_val = f"{m_park.group(1)} places de parking" if m_park else "Parking"
+
+    # 5. Surface terrasse / varangue (m²)
+    ter_raw = raw_specs.get("surface_terrasse_m2")
+    ter_val: Optional[float] = None
+    if ter_raw is not None:
+        try:
+            val_t = float(str(ter_raw).replace(",", "."))
+            int_str = str(int(val_t))
+            if 1.0 <= val_t <= 500.0 and int_str in desc_digits and any(k in desc_lower for k in ("terrasse", "varangue", "deck", "balcon")):
+                ter_val = val_t
+        except Exception:
+            ter_val = None
+    if ter_val is None:
+        m_ter = re.search(r"(?:terrasse|varangue|deck)\s*(?:couverte)?\s*(?:de)?\s*(\d+(?:[,\.]\d+)?)\s*(?:m²|m2)", desc_clean, re.I)
+        if m_ter:
+            try:
+                ter_val = float(m_ter.group(1).replace(",", "."))
+            except ValueError:
+                pass
+
+    # 6. Standing
+    std_raw = raw_specs.get("standing")
+    std_val: Optional[str] = None
+    if std_raw and isinstance(std_raw, str):
+        if any(k in std_raw.lower() for k in ("standing", "prestige", "luxe", "récent")):
+            if any(k in desc_lower for k in ("standing", "prestige", "luxe", "récent")):
+                std_val = std_raw.strip()
+    if not std_val:
+        m_std = re.search(r"\b(bon\s+standing|haut\s+standing|grand\s+standing|prestige)\b", desc_clean, re.I)
+        if m_std:
+            std_val = m_std.group(1).capitalize()
+
+    return {
+        "charges_mensuelles_xpf": charges_val,
+        "etage": etage_val,
+        "has_elevator": has_elevator,
+        "parking_detail": parking_val,
+        "surface_terrasse_m2": ter_val,
+        "standing": std_val
+    }
 
 
 def enrich_listing_with_ai(
@@ -607,11 +763,21 @@ def enrich_listing_with_ai(
     }
 
     user_message = (
-        f"Analyse l'annonce suivante et extrais les contacts et rubriques structurées en JSON :\n"
+        f"Analyse l'annonce suivante et extrais les contacts, spécifications techniques et rubriques structurées en JSON :\n"
         f"{json.dumps(compact_payload, ensure_ascii=False, indent=2)}\n\n"
         f"Format JSON attendu impérativement (attention : 'items' DOIT être une simple liste de chaînes de texte, aucun objet imbriqué dans items) :\n"
         f"{{\n"
-        f'  "direct_contacts": [{{"name": "<nom_negociateur_ou_nom_agence>", "phone": "<telephone_reel>", "whatsapp": "<format_chiffres_sans_plus>", "email": null, "role": "Négociateur ou Agence"}}],\n'
+        f'  "direct_contacts": [\n'
+        f'    {{"name": "<nom_negociateur_ou_nom_agence>", "phone": "<telephone_reel>", "whatsapp": "<format_chiffres_sans_plus>", "email": null, "role": "Négociateur ou Agence"}}\n'
+        f'  ],\n'
+        f'  "technical_specs": {{\n'
+        f'    "charges_mensuelles_xpf": null,\n'
+        f'    "etage": null,\n'
+        f'    "has_elevator": null,\n'
+        f'    "parking_detail": null,\n'
+        f'    "surface_terrasse_m2": null,\n'
+        f'    "standing": null\n'
+        f'  }},\n'
         f'  "sections": [\n'
         f'    {{"key": "<cle_rubrique>", "title": "<Titre de la rubrique>", "icon": "🏢", "items": ["<fait_1_extrait_du_texte>", "<fait_2_extrait_du_texte>"]}}\n'
         f'  ]\n'
@@ -659,13 +825,15 @@ def enrich_listing_with_ai(
 
     if ollama_success:
         raw_contacts = ai_result.get("direct_contacts", [])
+        raw_specs = ai_result.get("technical_specs", {})
         raw_sections = ai_result.get("sections", [])
         
         # Grounding check strict en Python
         direct_contacts = _sanitize_ai_contacts(raw_contacts, raw_text, agency_name=agency, property_type=prop_type)
-        sections = _sanitize_ai_sections(raw_sections, raw_description=raw_text, title=title)
-        
+        technical_specs = _sanitize_ai_technical_specs(raw_specs, raw_description=raw_text)
+        sections = _sanitize_ai_sections(raw_sections, raw_description=raw_text, title=title, property_type=prop_type)
         ai_result["direct_contacts"] = direct_contacts
+        ai_result["technical_specs"] = technical_specs
         ai_result["sections"] = sections
         tok_s = round((tokens_generated / (latency_ms / 1000.0)), 1) if latency_ms > 0 and tokens_generated > 0 else 0
         provider_used = f"Ollama ({model})"
@@ -675,11 +843,13 @@ def enrich_listing_with_ai(
         # Repli robuste et garanti Tier-1 déterministe
         t1_start = time.time()
         t1_struct = structure_description(raw_text, property_type=prop_type)
+        technical_specs = _sanitize_ai_technical_specs({}, raw_description=raw_text)
         t1_ms = int((time.time() - t1_start) * 1000)
         direct_contacts = t1_struct.get("direct_contacts", [])
         sections = t1_struct.get("sections", [])
         ai_result = {
             "direct_contacts": direct_contacts,
+            "technical_specs": technical_specs,
             "sections": sections,
             "key_highlights": t1_struct.get("key_highlights", []),
             "agency_metadata": t1_struct.get("agency_metadata", {})
@@ -698,6 +868,7 @@ def enrich_listing_with_ai(
         "latency_ms": latency_ms,
         "tokens_per_second": tok_s,
         "direct_contacts": direct_contacts,
+        "technical_specs": technical_specs,
         "sections": sections,
         "raw_response": ai_result
     }

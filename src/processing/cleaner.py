@@ -1,4 +1,5 @@
 import re
+import json
 from typing import Optional, Tuple
 from src.models.listing import RawListing, CleanedListing, TransactionType, PropertyType, Commune
 from src.reference.geo import GeoReferential
@@ -386,6 +387,106 @@ class ListingCleaner:
             transaction_type=trans_type,
         )
 
+        # Extraction des charges mensuelles
+        charges: Optional[int] = None
+        if getattr(raw, "raw_charges", None):
+            clean_c = re.sub(r"[^\d]", "", str(raw.raw_charges))
+            if clean_c:
+                charges = int(clean_c)
+        elif raw.description:
+            m_chg = re.search(r"charges?\s*(?:mensuelles?|de\s+copropri[eé]t[eé]|copro)?\s*[:\s]?\s*(\d+[\d\s]*)(?:\.00)?\s*(?:f|xpf)?", raw.description, re.IGNORECASE)
+            if m_chg:
+                clean_c = re.sub(r"[^\d]", "", m_chg.group(1))
+                if clean_c:
+                    charges = int(clean_c)
+
+        # Surface terrasse fallback
+        if surface_terrasse is None and getattr(raw, "raw_terrace", None):
+            m_ter = re.search(r"(\d+(?:[\.,]\d+)?)", str(raw.raw_terrace))
+            if m_ter:
+                try:
+                    surface_terrasse = float(m_ter.group(1).replace(",", "."))
+                except ValueError:
+                    pass
+
+        # Stationnement & Parking
+        parkings: Optional[int] = None
+        parking_detail: Optional[str] = None
+        if "carport" in blob_features:
+            parking_detail = "Carport"
+            parkings = 1
+        elif "garage" in blob_features or "box" in blob_features:
+            parking_detail = "Garage fermé"
+            parkings = 1
+        elif "parking" in blob_features or "stationnement" in blob_features:
+            parking_detail = "Parking"
+            parkings = 1
+
+        m_park_num = re.search(r"(\d+)\s*(?:places?|parkings?|carports?|garages?|box|stationnements?)", blob_features)
+        if m_park_num:
+            try:
+                parkings = int(m_park_num.group(1))
+            except ValueError:
+                pass
+
+        # Étage et Ascenseur
+        etage: Optional[str] = getattr(raw, "raw_floor", None)
+        if not etage:
+            m_et = re.search(r"\b(dernier\s+[eé]tage|\d+(?:[eè]me|er)?\s+[eé]tage|rdc|rez[- ]de[- ]chauss[eé]e)\b", blob_features)
+            if m_et:
+                etage = m_et.group(1).capitalize()
+
+        has_elevator = False
+        if getattr(raw, "complementary_details", None):
+            for cat, items in raw.complementary_details.items():
+                if any("ascenseur" in str(it).lower() for it in items):
+                    has_elevator = True
+        if not has_elevator and "ascenseur" in blob_features:
+            has_elevator = True
+
+        # Détails complémentaires JSON
+        comp_details_json = None
+        if getattr(raw, "complementary_details", None):
+            try:
+                comp_details_json = json.dumps(raw.complementary_details, ensure_ascii=False)
+            except Exception:
+                comp_details_json = None
+
+        # Négociateur direct et contact téléphonique
+        direct_negotiator = getattr(raw, "direct_negotiator", None)
+        direct_phone = getattr(raw, "direct_phone", None)
+        if (not direct_negotiator or not direct_phone) and raw.description:
+            # 1. Détection via le moteur universel de contacts NC
+            try:
+                from src.processing.description_structurer import structure_description
+                struct = structure_description(raw.description)
+                contacts = struct.get("direct_contacts", [])
+                if contacts:
+                    if not direct_negotiator and contacts[0].get("name"):
+                        direct_negotiator = contacts[0]["name"]
+                    if not direct_phone and contacts[0].get("phone"):
+                        direct_phone = contacts[0]["phone"]
+            except Exception:
+                pass
+
+            # 2. Fallback regex ciblée
+            if not direct_negotiator or not direct_phone:
+                m_neg = re.search(
+                    r"(?:contactez|contacter|joindre|appelez|visites?,?\s*contactez)\s+([A-ZÀ-ÿ][a-zà-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zà-ÿ]+)?)\s+(?:au\s+|au\s*:?\s*|\(?T[eé]l\.?\s*:?\s*|\(?)\s*([0-9]{2}[\.\s]?[0-9]{2}[\.\s]?[0-9]{2}|[0-9]{6})",
+                    raw.description or "",
+                    re.IGNORECASE
+                )
+                if m_neg:
+                    cand_name = m_neg.group(1).strip()
+                    cand_name = re.sub(r"\s+\b(?:au|sur|par|le|la|les|directement)\b.*$", "", cand_name, flags=re.IGNORECASE).strip()
+                    if cand_name.lower() not in ("l'agence", "notre agence", "l agence", "agence", "une", "visite", "visiter"):
+                        if not direct_negotiator:
+                            direct_negotiator = cand_name.capitalize()
+                    if not direct_phone:
+                        raw_num = m_neg.group(2).strip()
+                        num_clean = re.sub(r"[^\d]", "", raw_num)
+                        direct_phone = f"+687 {num_clean[:2]}.{num_clean[2:4]}.{num_clean[4:]}" if len(num_clean) == 6 else f"+687 {raw_num}"
+
         return CleanedListing(
             id=unique_id,
             source=raw.source,
@@ -398,11 +499,16 @@ class ListingCleaner:
             commune=commune,
             quartier=quartier,
             price_xpf=price,
+            charges_mensuelles_xpf=charges,
             surface_habitable_m2=surface_hab,
             surface_terrain_m2=surface_terrain,
             surface_terrasse_m2=surface_terrasse,
             rooms=rooms,
             bedrooms=bedrooms,
+            parkings=parkings,
+            parking_detail=parking_detail,
+            etage=etage,
+            has_elevator=has_elevator,
             has_sea_view=has_sea_view,
             has_pool=has_pool,
             has_air_conditioning=has_ac,
@@ -415,4 +521,7 @@ class ListingCleaner:
             published_at=raw.published_at,
             first_seen_at=raw.published_at or raw.extracted_at,
             is_active=True,
+            complementary_details_json=comp_details_json,
+            direct_negotiator=direct_negotiator,
+            direct_phone=direct_phone,
         )
