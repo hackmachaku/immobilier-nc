@@ -224,3 +224,117 @@ def test_sanitize_ai_technical_specs_grounding():
     assert clean_fake["charges_mensuelles_xpf"] == 12000
     # 85 m² doit être rejeté et remplacé par 14.0 m² réel
     assert clean_fake["surface_terrasse_m2"] == 14.0
+
+
+def test_kone_f4_canonical_formatting_and_zero_loss():
+    """
+    Valide sur le cas réel 'Maison F4 à Extérieur (Koné)' que :
+    1. Une sortie LLM dégradée ('BIEN RÉSIDENTIEL', 'kitchen équipée', '16 ares', '15m²' coupés)
+       est intégralement reformatée dans le gabarit canonique invariant.
+    2. Les anglicismes ('kitchen') et puces numériques orphelines ('15m²', '16 ares') disparaissent.
+    3. Aucune information n'est perdue ('dont 1 privative', 'Au calme', 'Idéale pour la famille').
+    4. Le contact direct 'Céline : 73.06.00' est extrait.
+    """
+    from src.processing.ai_enricher import _sanitize_ai_sections
+    from src.processing.description_structurer import structure_description
+
+    raw_kone = (
+        "!! A VENDRE !!\n\n"
+        "Seulement 18 000 000F\n\n"
+        "Maison F4 INDIVIDUELLE sur un très beau terrain d'environ 16 ares avec 3 chambres climatisées, "
+        "cuisine équipée, 2 salles de bain dont 1 privative, une terrasse couverte de 15m², un garage fermé.\n\n"
+        "Au calme. Idéale pour la famille et 1er achat!\n\n"
+        "Contactez-nous pour une visite :\n\n"
+        "Céline : 73.06.00"
+    )
+
+    # Simulation de la sortie dégradée observée sur qwen2.5:1.5b avant refonte
+    degraded_ai_output = [
+        {
+            "key": "bien_residentiel",
+            "title": "BIEN RÉSIDENTIEL",
+            "icon": "🏢",
+            "items": [
+                "Maison F4 INDIVIDUELLE",
+                "16 ares",
+                "3 chambres climatisées",
+                "kitchen équipée",
+                "2 salles de bain",
+                "1 terrasse couverte",
+                "15m²",
+                "garage fermé"
+            ]
+        }
+    ]
+
+    sections = _sanitize_ai_sections(degraded_ai_output, raw_description=raw_kone, title="Maison F4 à Extérieur (Koné)", property_type="MAISON")
+    sec_by_key = {s["key"]: s for s in sections}
+
+    # 1. Aucun titre 'BIEN RÉSIDENTIEL' ne doit subsister
+    assert not any("BIEN RÉSIDENTIEL" in s["title"].upper() for s in sections)
+
+    # 2. Les rubriques canoniques attendues sont toutes présentes dans l'ordre exact
+    expected_order = ["cadre_vie", "pieces_de_vie", "espace_nuit", "exterieurs", "stationnement_annexes", "conditions_modalites"]
+    actual_keys = [s["key"] for s in sections if s["key"] in expected_order]
+    assert actual_keys == expected_order
+
+    # 3. Aucun anglicisme ('kitchen') ni fragment orphelin ('15m²' seul)
+    all_items = [it for s in sections for it in s["items"]]
+    assert not any("kitchen" in it.lower() for it in all_items)
+    assert not any(it.strip() in ("15m²", "15 m²", "16 ares") for it in all_items)
+
+    # 4. Vérification du contenu de chaque rubrique
+    assert any("cuisine équipée" in it.lower() for it in sec_by_key["pieces_de_vie"]["items"])
+    assert any("3 chambres climatisées" in it.lower() for it in sec_by_key["espace_nuit"]["items"])
+    assert any("dont 1 privative" in it.lower() for it in sec_by_key["espace_nuit"]["items"])
+    assert any("16 ares" in it.lower() for it in sec_by_key["exterieurs"]["items"])
+    assert any("15 m²" in it.lower() for it in sec_by_key["exterieurs"]["items"])
+    assert any("garage fermé" in it.lower() for it in sec_by_key["stationnement_annexes"]["items"])
+    assert any("calme" in it.lower() or "famille" in it.lower() for it in sec_by_key["cadre_vie"]["items"])
+
+    # 5. Contact direct Céline extrait
+    t1 = structure_description(raw_kone)
+    assert any(c["name"] == "Céline" and "73.06.00" in c["phone"] for c in t1["direct_contacts"])
+
+
+def test_bureau_pk6_canonical_reconciliation_no_terrain():
+    """
+    Valide sur le cas réel 'Bureau P.k. 6' que si le LLM crée à tort une rubrique 'Terrain: 6ème KM'
+    et oublie 'Surface principale : 85 m²' et '3 bureaux', la réconciliation hybride :
+    - supprime le faux 'Terrain: 6ème KM',
+    - restaure toutes les surfaces et les 3 bureaux dans 'Bureaux & Espaces professionnels'.
+    """
+    from src.processing.ai_enricher import _sanitize_ai_sections
+
+    raw_pk6 = (
+        "A VENDRE – LOCAL COMMERCIAL / BUREAUX 6ème KM (Rue Iekawé)\n"
+        "Local commercial aménagé, bénéficiant d'une excellente visibilité en rez-de-chaussée d'une résidence récente au 6ème km.\n"
+        "Idéal pour une activité tertiaire, médicale, restauration légère ou services.\n"
+        "Surface principale : 85 m²\n"
+        "Grande pièce principale de 30 m²\n"
+        "3 bureaux\n"
+        "Dock / réserve de 45 m² (hauteur 3 m)\n"
+        "5 places de parking dont 2 couvertes\n"
+        "WC séparé\n"
+        "Volets roulants électriques\n"
+        "Climatisation intégrale\n"
+        "Contact : Manu – 98.72.66"
+    )
+
+    degraded_pk6_ai = [
+        {"key": "terrain", "title": "Terrain", "items": ["6ème KM"]},
+        {"key": "bureaux", "title": "Bureaux & Espaces professionnels", "items": ["WC séparé", "Volets roulants électriques", "Climatisation intégrale"]},
+        {"key": "stationnement", "title": "Stationnement & Logistique", "items": ["Dock / réserve de 45 m² (hauteur 3 m)", "5 places de parking dont 2 couvertes"]}
+    ]
+
+    sections = _sanitize_ai_sections(degraded_pk6_ai, raw_description=raw_pk6, title="Bureau PK6", property_type="COMMERCIAL")
+    titles = [s["title"] for s in sections]
+
+    assert "Terrain" not in titles
+    sec_bureaux = next(s for s in sections if s["key"] == "espace_nuit")
+    assert sec_bureaux["title"] == "Bureaux & Espaces professionnels"
+    bureaux_str = " ".join(sec_bureaux["items"]).lower()
+    assert "85 m²" in bureaux_str
+    assert "30 m²" in bureaux_str
+    assert "3 bureaux" in bureaux_str
+

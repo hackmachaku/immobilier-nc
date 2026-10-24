@@ -20,7 +20,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from src.processing.description_structurer import structure_description, normalize_nc_phone, STOP_NAMES
+from src.processing.description_structurer import (
+    structure_description,
+    normalize_nc_phone,
+    format_bullet_uniform,
+    split_compound_line,
+    classify_bullet_or_sentence,
+    is_contact_or_boilerplate_line,
+    CATEGORY_DEFINITIONS,
+    STOP_NAMES,
+)
 from src.utils.text_cleaner import fix_mojibake, normalize_agency_name
 from src.domain.agencies_directory import NC_AGENCIES
 from src.utils.logger import get_logger
@@ -42,30 +51,24 @@ HARDWARE_SPECS = {
 }
 
 DEFAULT_SYSTEM_PROMPT = (
-    "Tu es le moteur d'intelligence sémantique de référence pour l'immobilier en Nouvelle-Calédonie (Sentinel ImmoNC).\n"
-    "Ta mission est d'analyser l'annonce pour en extraire avec une fidélité absolue les contacts réels, les spécifications techniques quantifiées et la ventilation ordonnée des caractéristiques.\n\n"
-    "RÈGLES STRICTES D'EXTRACTION & D'ANCRAGE :\n\n"
-    "1. CONTACTS & NÉGOCIATEURS DIRECTS ('direct_contacts') :\n"
-    "- Négociateur dédié : Si une personne physique est nommée (ex: 'Florian au 75.02.30', 'Laurent NGUYEN au 289.888', 'Manu 98.72.66'), extraire son prénom/nom, role='Négociateur', et son numéro.\n"
-    "- Contact Agence : Si le texte indique 'contactez l'agence au XX.XX.XX' sans nommer de négociateur particulier, attribuer ce contact à l'agence : name = le nom de l'agence (champ 'agency'), role='Agence', phone = le numéro mentionné.\n"
-    "- Numérotation NC (OPT) : 6 chiffres (mobiles: 7x, 8x, 9x | fixes: 2x, 3x, 4x | verts: 05). Formats courants : 75.02.30, 284.282, 98 72 66, 0 98.72.66.\n"
-    "- Si les deux (négociateur et agence) sont identifiés, renvoyer les deux fiches distinctes.\n"
-    "- Si aucun contact n'est mentionné, 'direct_contacts' doit être une liste vide [].\n"
-    "- ANCRAGE STRICT : N'extraire QUE des personnes et numéros EXPLICITEMENT présents. ZÉRO hallucination.\n\n"
-    "2. SPÉCIFICATIONS TECHNIQUES QUANTIFIÉES ('technical_specs') :\n"
-    "- charges_mensuelles_xpf : Montant entier des charges de copropriété en Francs Pacifique (ex: 'charges 12 000 F/mois' -> 12000, 'copro 15.000 XPF' -> 15000), ou null si non mentionné.\n"
-    "- etage : Étage descriptif (ex: 'Dernier étage', 'Rez-de-chaussée', '2ème étage'), ou null si absent.\n"
-    "- has_elevator : true si ascenseur mentionné, false si explicitement sans ascenseur, null sinon.\n"
-    "- parking_detail : Description précise du stationnement (ex: '1 place couverte sécurisée', '2 carports', 'Garage fermé / box', '8 places de stationnement'), ou null.\n"
-    "- surface_terrasse_m2 : Nombre flottant pour la surface de terrasse, varangue ou deck en m² (ex: 14.0, 40.0), ou null.\n"
-    "- standing : Appréciation explicite du bien (ex: 'Bon standing', 'Haut standing', 'Résidence récente'), ou null.\n\n"
-    "3. TAXONOMIE ADAPTÉE À LA NATURE DU BIEN ('sections') :\n"
-    "- Bien Résidentiel (Appartement, Villa, Maison) : 'pieces_de_vie' (Séjour & Cuisine), 'espace_nuit' (Chambres & SDE), 'exterieurs' (Terrasse, Jardin, Vue, Piscine), 'stationnement' (Parking, Garage, Cellier), 'copropriete' (Charges, Étage, Syndic).\n"
-    "- Bien Commercial / Professionnel (Bureau, Dock, Local) : 'bureaux' (Bureaux & Espaces pros), 'stockage' (Dock, Réserve, Hauteur sous plafond), 'stationnement' (Parkings clients/pro), 'conditions' (Bail, Loyer, Charges). INTERDICTION STRICTE d'utiliser 'espace_nuit' pour un bien professionnel !\n"
-    "- Terrain : 'terrain' (Superficie en ares/m², viabilisation, vue, pente, zonage PUD).\n"
-    "- Dans chaque rubrique, 'items' doit être une liste de faits réels extraits du texte. Ne jamais inventer de pièces ou caractéristiques.\n\n"
-    "4. FORMAT DE SORTIE :\n"
-    "Répondre EXCLUSIVEMENT en JSON strict conforme au schéma attendu, sans balisage markdown ni aucun texte avant ou après."
+    "Tu es le moteur d'analyse immobilière de référence en Nouvelle-Calédonie (Sentinel ImmoNC).\n"
+    "Analyse l'annonce et réponds EXCLUSIVEMENT en JSON strict et 100 % en FRANÇAIS (aucun mot anglais comme 'kitchen' ou 'bedroom').\n\n"
+    "1. CONTACTS & NÉGOCIATEURS ('direct_contacts') :\n"
+    "- Négociateur nommé (ex: 'Céline : 73.06.00', 'Florian au 75.02.30', 'Manu 98.72.66') -> name=Prénom/Nom, role='Négociateur', phone=numéro.\n"
+    "- Mention 'contactez l'agence au XX.XX.XX' sans prénom -> name=nom de l'agence (champ 'agency'), role='Agence', phone=numéro.\n"
+    "- Aucun contact dans le texte -> []. ZÉRO invention.\n\n"
+    "2. SPÉCIFICATIONS TECHNIQUES ('technical_specs') :\n"
+    "- charges_mensuelles_xpf (entier XPF ou null), etage (texte ou null), has_elevator (bool ou null), parking_detail (texte ou null), surface_terrasse_m2 (flottant ou null), standing (texte ou null).\n\n"
+    "3. RUBRIQUES NORMALISÉES ('rubriques') :\n"
+    "Répartis TOUTES les informations du texte dans ces clés fixes sous forme de puces complètes en français commençant par une majuscule.\n"
+    "RÈGLE D'OR : Ne coupe JAMAIS une surface ou un détail de son nom (écris 'Terrasse couverte de 15 m²' et JAMAIS '15m²' seul ; écris 'Terrain d'environ 16 ares' et JAMAIS '16 ares' seul ; conserve '2 salles de bain dont 1 privative').\n"
+    "- 'cadre_vie' : Type de bien, typologie (F2, F3, F4...), quartier, environnement (calme, proche commodités), résidence, étage.\n"
+    "- 'services_residence' : Ascenseur, sécurité, vidéosurveillance, gardien, salle de sport, commerces de l'immeuble.\n"
+    "- 'pieces_de_vie' : Séjour, salon, cuisine équipée, buanderie.\n"
+    "- 'espace_nuit' : Chambres (avec climatisation/placards), salles de bain/eau (avec détails), WC — OU surfaces de bureaux, pièce principale et sanitaires si bien commercial.\n"
+    "- 'exterieurs' : Terrain (en ares ou m²), terrasse/varangue (avec m²), jardin, piscine, vue.\n"
+    "- 'stationnement_annexes' : Garage fermé, parking couvert/sécurisé, carport, cellier, box, dock/réserve.\n"
+    "- 'conditions_modalites' : Prix de vente, loyer, charges de copropriété, modalités."
 )
 
 
@@ -88,8 +91,8 @@ def get_ai_config() -> Dict[str, Any]:
         "system_prompt": DEFAULT_SYSTEM_PROMPT,
         "presets": {
             "standard": {
-                "name": "🎯 Standard Immo NC (Haute Fidélité)",
-                "description": "Extraction exhaustive des contacts direct/agence, spécifications techniques (charges, étage, parking) et 7 rubriques équilibrées.",
+                "name": "🎯 Standard Immo NC (Gabarit Invariant v3)",
+                "description": "Gabarit canonique à clés fixes : 100 % des annonces structurées dans le même ordre exact, sans anglicisme ni perte de détail.",
                 "temperature": 0.1,
                 "prompt": DEFAULT_SYSTEM_PROMPT
             },
@@ -99,12 +102,11 @@ def get_ai_config() -> Dict[str, Any]:
                 "temperature": 0.1,
                 "prompt": (
                     "Tu es un expert en immobilier d'entreprise, commercial et logistique en Nouvelle-Calédonie.\n"
-                    "RÈGLES STRICTES :\n"
-                    "1. Extraire le contact direct du négociateur/commercialisateur ou de l'agence dans 'direct_contacts' (formats NC 7x/8x/9x ou 2x/3x/4x).\n"
-                    "2. Isoler les spécifications techniques dans 'technical_specs' : charges_mensuelles_xpf, etage, has_elevator, parking_detail (ex: places clientes, quai).\n"
-                    "3. Rubriques adaptées dans 'sections' : 'Bureaux & Espaces professionnels' (clé: bureaux), 'Stockage, Dock & Logistique' (clé: stockage, avec hauteur sous plafond), 'Stationnement & Accès', 'Modalités & Conditions' (bail 3/6/9, loyer).\n"
-                    "4. INTERDICTION ABSOLUE d'utiliser la rubrique 'Espace Nuit' pour un bien d'entreprise.\n"
-                    "5. Répondre EXCLUSIVEMENT en JSON strict conforme au schéma."
+                    "RÈGLES STRICTES (100 % en français) :\n"
+                    "1. Extraire le contact direct du négociateur ou de l'agence dans 'direct_contacts' (formats NC 7x/8x/9x ou 2x/3x/4x).\n"
+                    "2. Isoler les spécifications techniques dans 'technical_specs' : charges_mensuelles_xpf, etage, has_elevator, parking_detail.\n"
+                    "3. Ventiler toutes les caractéristiques dans le dictionnaire 'rubriques' à clés fixes ('cadre_vie', 'pieces_de_vie', 'espace_nuit' pour les bureaux, 'stationnement_annexes' pour parkings/dock, 'conditions_modalites').\n"
+                    "4. Ne jamais couper une surface de son intitulé et répondre EXCLUSIVEMENT en JSON strict."
                 )
             },
             "contacts_only": {
@@ -114,7 +116,7 @@ def get_ai_config() -> Dict[str, Any]:
                 "prompt": (
                     "Tu es un analyseur ultra-rapide de coordonnées immobilières pour la Nouvelle-Calédonie.\n"
                     "Extrais tous les contacts réels de l'annonce dans 'direct_contacts' :\n"
-                    "- Négociateur physique si nommé (ex: Florian, Sophie, Laurent NGUYEN) avec role='Négociateur'.\n"
+                    "- Négociateur physique si nommé (ex: Céline, Florian, Sophie, Laurent NGUYEN) avec role='Négociateur'.\n"
                     "- Agence si mentionnée (ex: 'contactez l'agence au...') avec role='Agence'.\n"
                     "- Numéros de téléphone au format calédonien à 6 chiffres (+687).\n"
                     "Formate la réponse sous forme de JSON strict."
@@ -126,10 +128,8 @@ def get_ai_config() -> Dict[str, Any]:
                 "temperature": 0.2,
                 "prompt": (
                     "Tu es un conseiller en investissement immobilier en Nouvelle-Calédonie.\n"
-                    "Analyse cette annonce sous l'angle du rendement financier :\n"
-                    "1. Isole impérativement dans 'technical_specs' les charges_mensuelles_xpf, l'étage, l'ascenseur et le parking.\n"
-                    "2. Ventile dans 'sections' les éléments de valorisation : loyer potentiel, standing de la copropriété, travaux éventuels et cadre fiscal.\n"
-                    "3. Réponds au format JSON strict."
+                    "Analyse cette annonce sous l'angle du rendement financier en utilisant le gabarit fixe 'rubriques' et 'technical_specs'.\n"
+                    "Réponds EXCLUSIVEMENT en JSON strict et en français."
                 )
             }
         }
@@ -462,26 +462,39 @@ def _sanitize_ai_contacts(
 
 def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: str = "", property_type: str = "") -> List[Dict[str, Any]]:
     """
-    Nettoie, aplatit et valide par ancrage (Grounding Check) les rubriques retournées par l'IA.
-    Élimine les puces hallucinées issues du prompt template (ex: fausses surfaces ou pièces absentes).
+    Normalise, valide par ancrage (Grounding Check) et ordonne dans le gabarit canonique invariant
+    toutes les rubriques retournées par l'IA (qu'elles soient au format dictionnaire 'rubriques'
+    à clés fixes ou au format liste 'sections').
+    Garantit :
+    1. Zéro titre inventé (ex: 'BIEN RÉSIDENTIEL' ou 'Terrain' sur un bureau sont éliminés).
+    2. Zéro anglicisme ('kitchen' -> 'Cuisine') et fusion des fragments numériques orphelins ('15m²', '16 ares').
+    3. Ordre, icônes et intitulés strictement identiques pour 100 % des annonces.
+    4. Réconciliation Zéro-Perte avec le moteur déterministe Tier-1 (aucune information oubliée ou tronquée).
     """
     import re
-    if not isinstance(raw_sections, list):
+    if not isinstance(raw_sections, (list, dict)):
         return []
 
     full_context = fix_mojibake(f"{title} {raw_description}").lower()
     full_context_clean = re.sub(r'[\s\-_.,;:]+', ' ', full_context)
 
+    is_commercial = (
+        any(t in property_type.upper() for t in ("COMMERCIAL", "BUREAU", "DOCK", "LOCAL"))
+        or any(k in full_context for k in ("bureau", "dock", "local commercial", "entrepôt", "commerce", "professionnel", "activité tertiaire"))
+    )
+
     def _is_bullet_grounded(bullet: str) -> bool:
         if not full_context_clean.strip():
             return True
-        b_clean = fix_mojibake(bullet).strip()
+        b_clean = format_bullet_uniform(fix_mojibake(bullet)).strip()
         b_lower = b_clean.lower()
-        if any(ph in b_lower for ph in ("<fait", "placeholder", "exemple")):
+        if any(ph in b_lower for ph in ("<fait", "placeholder", "exemple", "<cle", "<titre")):
             return False
 
-        # Mots outils à ignorer
-        STOP_WORDS = {"avec", "pour", "dans", "sont", "cette", "dont", "tout", "tous", "toutes", "plus", "très", "bien", "situé", "proche", "environ", "pièce"}
+        STOP_WORDS = {
+            "avec", "pour", "dans", "sont", "cette", "dont", "tout", "tous", "toutes",
+            "plus", "très", "bien", "situé", "proche", "environ", "pièce", "terrain"
+        }
         words = [w for w in re.split(r'[\s,\.\(\)\-\–\:\;]+', b_lower) if len(w) >= 4 and w not in STOP_WORDS]
         bullet_numbers = re.findall(r'\b\d+\b', b_clean)
 
@@ -492,7 +505,6 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
         matches = [t for t in tokens if t in full_context_clean]
         ratio = len(matches) / len(tokens)
 
-        # Si le bullet contient des chiffres absents du texte source (ex: '5 places' alors que le texte a 8)
         has_unmatched_number = any(num not in full_context_clean for num in bullet_numbers)
         if has_unmatched_number:
             if ratio < 0.6:
@@ -500,88 +512,135 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
 
         return ratio >= 0.4 or len(matches) >= 2 or len(words) <= 1
 
-    clean_sections = []
+    # 1. Extraction à plat de toutes les puces brutes issues du JSON de l'IA
+    NOT_BULLET_TITLES = {
+        "COMMERCIAL", "RESIDENTIAL", "TERRAIN", "BIEN RÉSIDENTIEL", "BIEN RESIDENTIEL",
+        "BIEN COMMERCIAL", "DÉTAILS", "DETAILS", "SECTION", "RUBRIQUES"
+    }
 
-    def _extract_bullets_recursive(obj: Any) -> List[str]:
-        bullets = []
+    def _collect_raw_strings(obj: Any) -> List[str]:
+        out: List[str] = []
         if isinstance(obj, str):
             s = fix_mojibake(obj).strip()
-            if s and s.upper() not in ("COMMERCIAL", "RESIDENTIAL", "TERRAIN") and not s.startswith("<"):
-                if _is_bullet_grounded(s):
-                    bullets.append(s)
-        elif isinstance(obj, dict):
-            for k in ("title", "key", "name", "desc"):
-                val = obj.get(k)
-                if isinstance(val, str) and val.strip() and val.upper() not in ("COMMERCIAL", "RESIDENTIAL", "TERRAIN"):
-                    if not any(v in val for v in ("Bureaux", "Stationnement", "Implantation", "Extérieur")) and not val.startswith("<"):
-                        if _is_bullet_grounded(val):
-                            bullets.append(fix_mojibake(val).strip())
-            for sub in obj.get("items", []):
-                bullets.extend(_extract_bullets_recursive(sub))
+            if s and s.upper() not in NOT_BULLET_TITLES and not s.startswith("<"):
+                out.append(s)
         elif isinstance(obj, list):
             for sub in obj:
-                bullets.extend(_extract_bullets_recursive(sub))
-        return bullets
+                out.extend(_collect_raw_strings(sub))
+        elif isinstance(obj, dict):
+            if "items" in obj and isinstance(obj["items"], list):
+                out.extend(_collect_raw_strings(obj["items"]))
+            else:
+                for k, v in obj.items():
+                    if k in ("key", "icon"):
+                        continue
+                    if k in ("title", "name", "desc") and isinstance(v, str):
+                        if not any(h in v for h in ("Bureaux", "Stationnement", "Implantation", "Extérieur", "Pièces", "Espace", "Cadre", "Modalités", "Services", "Synthèse")):
+                            out.extend(_collect_raw_strings(v))
+                    elif isinstance(v, (list, dict)):
+                        out.extend(_collect_raw_strings(v))
+        return out
 
-    for s in raw_sections:
-        if not isinstance(s, dict):
+    raw_extracted_strings = _collect_raw_strings(raw_sections)
+
+    # 2. Réparation des fragments numériques orphelins (ex: ["1 terrasse couverte", "15m²"] ou ["16 ares"])
+    repaired_bullets: List[str] = []
+    for raw_b in raw_extracted_strings:
+        b_norm = format_bullet_uniform(raw_b)
+        if not b_norm:
             continue
-        s_title = fix_mojibake(str(s.get("title") or s.get("key") or "Détails")).strip()
-        if s_title.startswith("<"):
+
+        # Si la puce est uniquement une surface en m² (ex: "15 m²")
+        if re.match(r'^(?:environ\s*|~)?\d+(?:[.,]\d+)?\s*m²$', b_norm, flags=re.IGNORECASE):
+            if repaired_bullets and not re.search(r'\d+\s*m²', repaired_bullets[-1]):
+                repaired_bullets[-1] = f"{repaired_bullets[-1]} de {b_norm}"
             continue
-        sub_items = s.get("items", [])
-        has_nested = any(isinstance(it, dict) and any(kw in str(it.get("title") or it.get("key")) for kw in ("Bureaux", "Stationnement", "Logistique", "Extérieur", "Pièce", "Cadre")) for it in sub_items)
 
-        if has_nested:
-            for it in sub_items:
-                if isinstance(it, dict):
-                    it_title = fix_mojibake(str(it.get("title") or it.get("key") or s_title)).strip()
-                    it_icon = str(it.get("icon") or s.get("icon") or "📌")
-                    it_bullets = []
-                    for b in it.get("items", []):
-                        it_bullets.extend(_extract_bullets_recursive(b))
-                    if not it_bullets and it_title and _is_bullet_grounded(it_title):
-                        it_bullets = [it_title]
-                    if it_bullets:
-                        clean_sections.append({
-                            "key": str(it.get("key") or "section").lower(),
-                            "title": it_title,
-                            "icon": it_icon if len(it_icon) <= 4 else "🏢",
-                            "items": [str(x) for x in it_bullets if str(x).strip()]
-                        })
-        else:
-            bullets = []
-            for b in sub_items:
-                bullets.extend(_extract_bullets_recursive(b))
-            if bullets:
-                clean_sections.append({
-                    "key": str(s.get("key") or "section").lower(),
-                    "title": s_title,
-                    "icon": str(s.get("icon") or "📌") if len(str(s.get("icon") or "")) <= 4 else "📌",
-                    "items": [str(x) for x in bullets if str(x).strip()]
-                })
+        # Si la puce est uniquement une superficie en ares (ex: "16 ares")
+        if re.match(r'^(?:environ\s*|~)?\d+(?:[.,]\d+)?\s*ares?$', b_norm, flags=re.IGNORECASE):
+            b_norm = f"Terrain d'environ {b_norm}"
 
-    # Filtrage de sécurité selon la nature du bien
-    is_commercial = "COMMERCIAL" in property_type.upper() or any(k in full_context for k in ("bureau", "dock", "local commercial", "entrepôt", "commerce", "professionnel"))
-    if is_commercial:
-        clean_sections = [cs for cs in clean_sections if "nuit" not in cs.get("key", "").lower() and "nuit" not in cs.get("title", "").lower() and "chambre" not in cs.get("title", "").lower()]
+        # Décomposition si la puce IA contient elle-même une énumération
+        for seg in split_compound_line(b_norm):
+            seg_u = format_bullet_uniform(seg)
+            if seg_u and _is_bullet_grounded(seg_u):
+                repaired_bullets.append(seg_u)
 
-    # Repli déterministe Tier-1 si nécessaire
+    # 3. Exécution du moteur déterministe Tier-1 pour garantir Zéro-Perte et récupérer les contacts à exclure
     t1_fallback = structure_description(raw_description, property_type="COMMERCIAL" if is_commercial else property_type)
+    t1_contacts = t1_fallback.get("direct_contacts", [])
     t1_sections = t1_fallback.get("sections", [])
 
-    valid_sections = [cs for cs in clean_sections if cs.get("title") and cs.get("items")]
-    if not valid_sections and raw_description:
-        return t1_sections
+    # 4. Classement dans le gabarit canonique invariant (8 clés ordonnées)
+    categorized_items: Dict[str, List[str]] = {cat["key"]: [] for cat in CATEGORY_DEFINITIONS}
+    categorized_items["prestations_complementaires"] = []
+
+    def _add_bullet_to_cat(cat_key: str, bullet_text: str):
+        b_fmt = format_bullet_uniform(bullet_text)
+        if not b_fmt or len(b_fmt) < 2:
+            return
+        if is_contact_or_boilerplate_line(b_fmt, t1_contacts):
+            return
+        # Éviter les mini-fragments de 1 mot déjà présents dans une phrase plus complète
+        target_list = categorized_items.get(cat_key, categorized_items["prestations_complementaires"])
+        b_low = b_fmt.lower()
+        for idx, existing in enumerate(target_list):
+            ex_low = existing.lower()
+            if b_low == ex_low or b_low in ex_low:
+                return
+            if ex_low in b_low:
+                # La nouvelle puce est plus complète (ex: "2 salles de bain dont 1 privative" > "2 salles de bain")
+                target_list[idx] = b_fmt
+                return
+        target_list.append(b_fmt)
+
+    for b in repaired_bullets:
+        # Ignorer les fragments de localisation isolés (ex: "6ème KM" seul alors que le contexte complet existe)
+        if len(b.split()) <= 2 and re.match(r'^\d+(?:er|ème|eme)\s+km$', b.lower()):
+            continue
+        c_key = classify_bullet_or_sentence(b)
+        _add_bullet_to_cat(c_key, b)
+
+    # 5. Réconciliation Zéro-Perte avec les sections Tier-1 déterministes
+    # Toute information réelle du texte brut oubliée ou tronquée par le LLM est réintégrée à sa place exacte
+    for t1_sec in t1_sections:
+        sec_key = t1_sec.get("key", "cadre_vie")
+        for t1_item in t1_sec.get("items", []):
+            _add_bullet_to_cat(sec_key, t1_item)
+
+    # 6. Assemblage final dans l'ordre canonique immuable avec titres et icônes standardisés
+    category_titles = {c["key"]: (c["title"], c["icon"]) for c in CATEGORY_DEFINITIONS}
+    category_titles["prestations_complementaires"] = ("Équipements & Prestations complémentaires", "✨")
 
     if is_commercial:
-        titles_present = [cs["title"].lower() for cs in valid_sections]
-        for t1_s in t1_sections:
-            t1_title = t1_s["title"].lower()
-            if any(k in t1_title for k in ("bureau", "stationnement", "dock", "logistique")) and not any(k in t1_title for k in titles_present):
-                valid_sections.append(t1_s)
+        category_titles["espace_nuit"] = ("Bureaux & Espaces professionnels", "🏢")
+        category_titles["cadre_vie"] = ("Implantation & Visibilité commerciale", "📍")
+        category_titles["stationnement_annexes"] = ("Stationnement & Logistique", "🚗")
 
-    return valid_sections
+    ordered_keys = [
+        "cadre_vie",
+        "services_residence",
+        "pieces_de_vie",
+        "espace_nuit",
+        "exterieurs",
+        "stationnement_annexes",
+        "prestations_complementaires",
+        "conditions_modalites"
+    ]
+
+    final_canonical_sections: List[Dict[str, Any]] = []
+    for k in ordered_keys:
+        items = categorized_items.get(k, [])
+        if items:
+            sec_title, sec_icon = category_titles[k]
+            final_canonical_sections.append({
+                "key": k,
+                "title": sec_title,
+                "icon": sec_icon,
+                "items": items
+            })
+
+    return final_canonical_sections
 
 
 def _sanitize_ai_technical_specs(raw_specs: Any, raw_description: str = "") -> Dict[str, Any]:
@@ -763,9 +822,9 @@ def enrich_listing_with_ai(
     }
 
     user_message = (
-        f"Analyse l'annonce suivante et extrais les contacts, spécifications techniques et rubriques structurées en JSON :\n"
+        f"Analyse l'annonce suivante et extrais les contacts, spécifications techniques et rubriques normalisées en JSON (100 % en français, aucun mot anglais) :\n"
         f"{json.dumps(compact_payload, ensure_ascii=False, indent=2)}\n\n"
-        f"Format JSON attendu impérativement (attention : 'items' DOIT être une simple liste de chaînes de texte, aucun objet imbriqué dans items) :\n"
+        f"Format JSON attendu impérativement (gabarit fixe à clés invariantes, chaque clé contient une liste de chaînes complètes en français) :\n"
         f"{{\n"
         f'  "direct_contacts": [\n'
         f'    {{"name": "<nom_negociateur_ou_nom_agence>", "phone": "<telephone_reel>", "whatsapp": "<format_chiffres_sans_plus>", "email": null, "role": "Négociateur ou Agence"}}\n'
@@ -778,9 +837,15 @@ def enrich_listing_with_ai(
         f'    "surface_terrasse_m2": null,\n'
         f'    "standing": null\n'
         f'  }},\n'
-        f'  "sections": [\n'
-        f'    {{"key": "<cle_rubrique>", "title": "<Titre de la rubrique>", "icon": "🏢", "items": ["<fait_1_extrait_du_texte>", "<fait_2_extrait_du_texte>"]}}\n'
-        f'  ]\n'
+        f'  "rubriques": {{\n'
+        f'    "cadre_vie": [],\n'
+        f'    "services_residence": [],\n'
+        f'    "pieces_de_vie": [],\n'
+        f'    "espace_nuit": [],\n'
+        f'    "exterieurs": [],\n'
+        f'    "stationnement_annexes": [],\n'
+        f'    "conditions_modalites": []\n'
+        f'  }}\n'
         f"}}"
     )
 
@@ -814,7 +879,7 @@ def enrich_listing_with_ai(
                 resp_json = json.loads(resp.read().decode("utf-8"))
                 response_text = resp_json.get("response", "{}")
                 ai_parsed = json.loads(response_text)
-                if isinstance(ai_parsed, dict) and ("sections" in ai_parsed or "direct_contacts" in ai_parsed):
+                if isinstance(ai_parsed, dict) and ("rubriques" in ai_parsed or "sections" in ai_parsed or "direct_contacts" in ai_parsed):
                     ai_result = ai_parsed
                     ollama_success = True
                     tokens_generated = resp_json.get("eval_count", 0)
@@ -826,10 +891,24 @@ def enrich_listing_with_ai(
     if ollama_success:
         raw_contacts = ai_result.get("direct_contacts", [])
         raw_specs = ai_result.get("technical_specs", {})
-        raw_sections = ai_result.get("sections", [])
+        raw_sections = ai_result.get("rubriques") or ai_result.get("sections", [])
         
-        # Grounding check strict en Python
+        # Grounding check strict + Réconciliation hybride Zéro-Perte en Python
         direct_contacts = _sanitize_ai_contacts(raw_contacts, raw_text, agency_name=agency, property_type=prop_type)
+        t1_check = structure_description(raw_text, property_type=prop_type)
+        existing_phones = {re.sub(r'\D', '', str(c.get("phone") or ""))[-6:] for c in direct_contacts if c.get("phone")}
+        for t1_c in t1_check.get("direct_contacts", []):
+            t1_p = str(t1_c.get("raw_phone") or "")[-6:]
+            if t1_p and t1_p not in existing_phones:
+                direct_contacts.append({
+                    "name": t1_c.get("name"),
+                    "phone": t1_c.get("phone"),
+                    "whatsapp": t1_c.get("whatsapp"),
+                    "email": t1_c.get("email"),
+                    "role": "Négociateur"
+                })
+                existing_phones.add(t1_p)
+
         technical_specs = _sanitize_ai_technical_specs(raw_specs, raw_description=raw_text)
         sections = _sanitize_ai_sections(raw_sections, raw_description=raw_text, title=title, property_type=prop_type)
         ai_result["direct_contacts"] = direct_contacts

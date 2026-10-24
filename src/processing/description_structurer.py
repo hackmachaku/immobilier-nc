@@ -203,20 +203,117 @@ def normalize_nc_phone(raw_phone: str) -> Optional[Dict[str, Any]]:
     }
 
 
+def format_bullet_uniform(text: str) -> str:
+    """
+    Normalise et uniformise la rédaction d'une puce descriptive :
+    - Corrige tout anglicisme éventuel issu d'un petit modèle LLM (kitchen -> cuisine, etc.).
+    - Normalise l'espacement des unités (15m² -> 15 m², 18 000 000F -> 18 000 000 F CFP).
+    - Applique une majuscule initiale propre et nettoie la ponctuation finale superflue.
+    """
+    if not text:
+        return ""
+
+    s = clean_line_typography(text)
+    if not s:
+        return ""
+
+    # Correction systématique des anglicismes fréquents des modèles 1.5B/3B
+    anglicisms = [
+        (r'\bkitchen\b', 'cuisine'),
+        (r'\bbedrooms\b', 'chambres'),
+        (r'\bbedroom\b', 'chambre'),
+        (r'\bbathrooms\b', 'salles de bain'),
+        (r'\bbathroom\b', 'salle de bain'),
+        (r'\bliving\s+room\b', 'séjour'),
+        (r'\bswimming\s+pool\b', 'piscine'),
+        (r'\bgarden\b', 'jardin'),
+    ]
+    for pat, repl in anglicisms:
+        s = re.sub(pat, repl, s, flags=re.IGNORECASE)
+
+    # Normalisation des unités de surface et montants XPF collés
+    s = re.sub(r'(\d)\s*(?:m2|m²)\b', r'\1 m²', s, flags=re.IGNORECASE)
+    s = re.sub(r'(\d[\d\s.]*\d{3})\s*F\b(?!\s*CFP)', r'\1 F CFP', s)
+
+    # Nettoyage des virgules ou points-virgules de fin de puce
+    s = re.sub(r'[,;:]+\s*$', '', s).strip()
+
+    # Majuscule sur la première lettre alphabétique si la puce commence par une lettre
+    if s and s[0].isalpha() and s[0].islower():
+        s = s[0].upper() + s[1:]
+
+    return s
+
+
+def _split_comma_feature_clauses(clause_str: str) -> List[str]:
+    """
+    Découpe une énumération de caractéristiques séparées par des virgules
+    tout en préservant les compléments liés ('dont 1 privative', 'de 15 m²', etc.).
+    """
+    parts = re.split(
+        r',\s+(?=(?:et\s+)?(?:un\b|une\b|\d+|deux\b|trois\b|quatre\b|cinq\b|'
+        r'grand[es]?\b|beau\b|belle[s]?\b|joli[es]?\b| vaste[s]?\b|large[s]?\b|'
+        r'cuisine\b|s[ée]jour\b|salon\b|chambre[s]?\b|suite\b|salle[s]?\b|sdb\b|sde\b|wc\b|'
+        r'terrasse[s]?\b|varangue[s]?\b|jardin\b|piscine\b|garage[s]?\b|parking[s]?\b|'
+        r'carport[s]?\b|cellier[s]?\b|buanderie\b|dressing\b|bureau[x]?\b|dock\b|vue\b|'
+        r'climatis|placard|volet))',
+        clause_str,
+        flags=re.IGNORECASE
+    )
+    out = []
+    for p in parts:
+        # Si le dernier segment contient " et un garage..." ou " et une terrasse..."
+        sub_et = re.split(
+            r'\s+et\s+(?=(?:un\b|une\b|\d+)\s+(?:garage|parking|carport|terrasse|varangue|chambre|salle|cellier|piscine|jardin|wc|buanderie))',
+            p.strip(),
+            flags=re.IGNORECASE
+        )
+        for sp in sub_et:
+            clean_p = sp.strip().rstrip('.')
+            if clean_p:
+                out.append(clean_p)
+    return out
+
+
 def split_compound_line(line: str) -> List[str]:
     """
-    Décompose une ligne compacte multi-attributs (séparée par •, |, // ou ;)
+    Décompose une ligne compacte multi-attributs (séparée par •, |, // ou énumération à virgules)
     en segments sémantiques atomiques pour une classification précise.
     Ex: '83 m² habitables • Terrasse ~40 m² • Vue mer' -> ['83 m² habitables', 'Terrasse ~40 m²', 'Vue mer']
+    Ex: 'Maison F4 sur un terrain de 16 ares avec 3 chambres climatisées, cuisine équipée, 2 salles de bain dont 1 privative, une terrasse couverte de 15m², un garage fermé.'
     """
     if not line:
         return []
 
-    # Vérifie la présence de séparateurs internes
+    # 1. Vérifie la présence de séparateurs explicites (•, |, //)
     if re.search(r'\s+[•|/]\s+|\s*//\s*', line):
         parts = [p.strip() for p in re.split(r'\s+[•|]\s+|\s*//\s*', line) if p.strip()]
         if len(parts) > 1:
             return parts
+
+    # 2. Cas des phrases descriptives condensées de type "<Bien> sur un <terrain> avec <énumération>"
+    m_cond = re.match(
+        r'^(?P<bien>(?:maison|villa|appartement|studio|duplex|propri[ée]t[ée]|f\d)\b[^,.;]*?)\s+sur\s+(?P<terrain>(?:un\s+|une\s+)?(?:tr[èe]s\s+)?(?:beau\s+|belle\s+|grand\s+|grande\s+|joli\s+)?(?:terrain|parcelle)\b[^,.;]*?)\s+(?:avec|comprenant|compos[ée]e?\s+de)\s+(?P<enum>.+)$',
+        line.strip(),
+        flags=re.IGNORECASE
+    )
+    if m_cond:
+        bien_part = m_cond.group("bien").strip()
+        terrain_part = re.sub(r'^(?:un|une)\s+', '', m_cond.group("terrain").strip(), flags=re.IGNORECASE)
+        enum_parts = _split_comma_feature_clauses(m_cond.group("enum"))
+        if len(enum_parts) >= 2:
+            return [bien_part, terrain_part] + enum_parts
+
+    # 3. Cas d'une énumération pure de pièces/prestations séparées par des virgules (sans verbe narratif)
+    narrative_verbs = re.search(
+        r'\b(?:d[ée]couvrez|invite|existe|distingue|conjugue|profiter|rejoindre|s[\'\’]ouvrent|repr[ée]sentant|choisit|situ[ée]e?)\b',
+        line,
+        flags=re.IGNORECASE
+    )
+    if not narrative_verbs and ',' in line:
+        enum_candidates = _split_comma_feature_clauses(line)
+        if len(enum_candidates) >= 3:
+            return enum_candidates
 
     return [line]
 
@@ -411,6 +508,8 @@ def extract_direct_contacts_and_agency_metadata(
         re.compile(rf'(?:contact|conseill[eè]re?|n[ée]gociat(?:eur|rice)|r[ée]f[ée]rent|agent)\s*:?\s*([A-ZÀ-Ÿ][a-zà-ÿ\-]+(?:\s+[A-ZÀ-Ÿ][A-Za-zÀ-Ÿ\-]+)?)\s*(?:au|:|\(|\-|[–—\x96])?\s*{PAT_PHONE}', re.IGNORECASE),
         # "Contact: CLARE CHRISTELLE (Tél: 79 40 01, Email: ...)"
         re.compile(rf'Contact\s*:\s*([A-ZÀ-Ÿ][a-zà-ÿ\-]+(?:\s+[A-ZÀ-Ÿ][A-Za-zÀ-Ÿ\-]+)?)\s*\(\s*T[ée]l\s*:\s*{PAT_PHONE}', re.IGNORECASE),
+        # "Céline : 73.06.00" ou "Céline – 73.06.00" en début de ligne
+        re.compile(rf'(?:^|\n)\s*([A-ZÀ-Ÿ][a-zà-ÿ\-]+(?:\s+[A-ZÀ-Ÿ][A-Za-zÀ-Ÿ\-]+)?)\s*(?::|[–—\x96])\s*{PAT_PHONE}'),
         # "85.46.55 (Tim)"
         re.compile(rf'{PAT_PHONE}\s*\(\s*([A-ZÀ-Ÿ][a-zà-ÿ\-]+)\s*\)', re.IGNORECASE),
     ]
@@ -488,7 +587,8 @@ def is_contact_or_boilerplate_line(line: str, direct_contacts: List[Dict[str, An
         'exclusivite', 'urgent', 'nouveaute', 'a visiter rapidement',
         'a ne pas manquer', 'rare sur le secteur', 'opportunite a saisir',
         'il comprend', 'elle comprend', 'il se compose', 'elle se compose',
-        'description', 'composition', 'a visiter absolument'
+        'description', 'composition', 'a visiter absolument',
+        'a vendre', 'à vendre', 'a louer', 'à louer', 'prix de vente', 'descriptif du bien'
     }
     if clean_no_emoji in slogans:
         return True
@@ -500,7 +600,7 @@ def is_contact_or_boilerplate_line(line: str, direct_contacts: List[Dict[str, An
     # Détection de ligne de contact ou signature
     for contact in direct_contacts:
         if contact["raw_phone"] in clean or contact["name"].lower() in clean.lower():
-            if re.search(r'(?:visite|visiter|négociation|contact|joindre|appeler|tél|tel|mobile)', clean, re.IGNORECASE):
+            if re.search(r'(?:visite|visiter|négociation|contact|joindre|appeler|tél|tel|mobile|:|[–—])', clean, re.IGNORECASE):
                 return True
 
     # Détecteur général de ligne de contact téléphonique résiduelle
@@ -525,22 +625,30 @@ def classify_bullet_or_sentence(text: str) -> str:
     norm = text.lower().replace("’", "'")
 
     # Priorité 0 : Conditions & Modalités financières explicites
-    if any(contains_keyword(norm, k) for k in ["loyer :", "loyer:", "loyer mensuel", "dépôt de garantie", "charges comprises", "hors charges", "bail"]):
+    if any(contains_keyword(norm, k) for k in [
+        "loyer :", "loyer:", "loyer mensuel", "dépôt de garantie",
+        "charges comprises", "hors charges", "bail", "location possible", "charges :"
+    ]):
         return "conditions_modalites"
-    if re.search(r'\bprix\s*:\s*\d+[\s.]?\d*\s*(?:f\s*cfp|xpf|f)\b', norm):
+    if re.search(r'\b(?:prix(?:\s+de\s+vente)?|seulement)\s*:?\s*\d[\d\s.]*\s*(?:f\s*cfp|xpf|f|mf|millions?)\b', norm):
+        return "conditions_modalites"
+    if re.search(r'^\s*\d+(?:[.,]\d+)?\s*(?:mf|millions?\s*f?)\s*$', norm):
         return "conditions_modalites"
 
-    # Priorité 1 : Espace Nuit & Sanitaires (vérifié avant pour éviter que 'espace de vie' ou 'suite' soit faussé)
+    # Priorité 1 : Espace Nuit & Sanitaires (ou Bureaux & Espaces pros pour bien commercial)
     if any(contains_keyword(norm, k) for k in [
         "chambre", "chambres", "dressing", "parentale", "salle d'eau", "salles d'eau",
         "salle de bain", "salle de bains", "salles de bain", "salles de bains",
-        "sde", "sdb", "douche", "baignoire", "wc", "toilette", "toilettes"
+        "sde", "sdb", "douche", "baignoire", "wc", "toilette", "toilettes",
+        "bureau", "bureaux", "open space", "open-space", "plateau de bureaux",
+        "salle de réunion", "surface principale", "pièce principale", "surface utile"
     ]):
-        return "espace_nuit"
+        if not any(w in norm for w in ["local commercial", "à vendre", "a vendre", "activité tertiaire"]):
+            return "espace_nuit"
 
     # Priorité 2 : Pièces de vie
     if any(contains_keyword(norm, k) for k in [
-        "cuisine", "séjour", "sejour", "salon", "salle à manger", "buanderie", "baie vitrée", "baies vitrées", "îlot", "ilot"
+        "cuisine", "séjour", "sejour", "salon", "salle à manger", "buanderie", "baie vitrée", "baies vitrées", "îlot", "ilot", "cafétéria", "cafeteria"
     ]):
         return "pieces_de_vie"
 
@@ -553,13 +661,20 @@ def classify_bullet_or_sentence(text: str) -> str:
     ]):
         return "services_residence"
 
-    # Priorité 4 : Stationnement & Annexes
-    if any(contains_keyword(norm, k) for k in ["parking", "parkings", "garage", "garages", "carport", "box", "cellier", "abri voiture", "stationnement", "stationnements"]):
+    # Priorité 4 : Stationnement, Dock & Annexes
+    if any(contains_keyword(norm, k) for k in [
+        "parking", "parkings", "garage", "garages", "carport", "box", "cellier",
+        "abri voiture", "stationnement", "stationnements", "dock", "réserve", "reserve", "entrepôt"
+    ]):
         if "cellier intérieur" not in norm and "option" not in norm and "loyer" not in norm:
             return "stationnement_annexes"
 
-    # Priorité 5 : Extérieurs & Vue
-    if any(contains_keyword(norm, k) for k in ["terrasse", "varangue", "jardin", "balcon", "deck", "piscine", "cour", "vue mer", "vue lagon", "vue dégagée", "extérieur", "extérieurs", "espace extérieur"]):
+    # Priorité 5 : Extérieurs, Terrain & Vue
+    if any(contains_keyword(norm, k) for k in [
+        "terrasse", "varangue", "jardin", "balcon", "deck", "piscine", "cour",
+        "vue mer", "vue lagon", "vue dégagée", "extérieur", "extérieurs", "espace extérieur",
+        "terrain", "parcelle", "ares"
+    ]):
         return "exterieurs"
 
     # Priorité 6 : Cadre de vie & Présentation d'ensemble
@@ -576,7 +691,7 @@ def classify_bullet_or_sentence(text: str) -> str:
         return max(scores, key=scores.get)
 
     # Fallback : prestations complémentaires si confort, sinon cadre de vie
-    if any(contains_keyword(norm, term) for term in ["chauffe-eau", "solaire", "panneaux", "volets", "fibre", "alarme", "carrelage", "moustiquaire"]):
+    if any(contains_keyword(norm, term) for term in ["chauffe-eau", "solaire", "panneaux", "volets", "fibre", "alarme", "carrelage", "moustiquaire", "climatisation"]):
         return "prestations_complementaires"
 
     return "cadre_vie"
@@ -636,7 +751,7 @@ def structure_description(raw_description: Optional[str], property_type: Optiona
         sub_segments = split_compound_line(clean)
 
         for seg in sub_segments:
-            seg_clean = clean_line_typography(seg)
+            seg_clean = format_bullet_uniform(seg)
             if not seg_clean or len(seg_clean) < 2:
                 continue
 
@@ -644,10 +759,9 @@ def structure_description(raw_description: Optional[str], property_type: Optiona
                 continue
 
             cat_key = classify_bullet_or_sentence(seg_clean)
-            if cat_key in categorized_items:
-                categorized_items[cat_key].append(seg_clean)
-            else:
-                categorized_items["prestations_complementaires"].append(seg_clean)
+            target_list = categorized_items.get(cat_key, categorized_items["prestations_complementaires"])
+            if seg_clean.lower() not in [x.lower() for x in target_list]:
+                target_list.append(seg_clean)
 
             cleaned_lines_all.append(seg_clean)
 
