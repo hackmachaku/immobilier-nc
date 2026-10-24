@@ -7,6 +7,11 @@ import re
 import html as html_lib
 from typing import Dict, Any, Optional, List, Tuple
 from bs4 import BeautifulSoup
+from src.processing.description_structurer import (
+    strip_technical_noise,
+    is_valid_person_name,
+    _clean_candidate_person_name,
+)
 
 
 def parse_immonc_detail_html(html_content: str, url: str = "") -> Dict[str, Any]:
@@ -57,8 +62,8 @@ def parse_immonc_detail_html(html_content: str, url: str = "") -> Dict[str, Any]
                         full_description = p_elem.get_text("\n\n", strip=True)
                         break
 
-    # Décodage propre des entités HTML (&nbsp;, &#192;, etc.)
-    full_description = html_lib.unescape(full_description).strip()
+    # Décodage propre des entités HTML (&nbsp;, &#192;, etc.) et retrait des bannières statiques parasites
+    full_description = strip_technical_noise(html_lib.unescape(full_description)).strip()
 
     # 2. Extraction des Détails Complémentaires structurés
     complementary_details: Dict[str, Any] = {}
@@ -145,13 +150,14 @@ def parse_immonc_detail_html(html_content: str, url: str = "") -> Dict[str, Any]
                 if "ascenseur" in it.lower():
                     has_elevator = True
 
-        # Informations financières
+        # Informations financières (retrait des décimales .00 avant extraction des chiffres pour éviter x100)
         if "financ" in cat_lower or "charge" in cat_lower:
             for it in items:
                 m_chg = re.search(r"charges?\s*(?:de\s+copropri[eé]t[eé]|mensuelles?|copro)?\s*[:\s]?\s*(\d+[\d\s\.,]*)", it, re.IGNORECASE)
                 if m_chg:
-                    num_str = re.sub(r"[^\d]", "", m_chg.group(1))
-                    if num_str:
+                    raw_val = re.sub(r"[.,]\d{1,2}\s*$", "", m_chg.group(1).strip())
+                    num_str = re.sub(r"[^\d]", "", raw_val)
+                    if num_str and 500 <= int(num_str) <= 150_000:
                         charges_mensuelles = int(num_str)
 
         # Cadre de vie
@@ -225,21 +231,19 @@ def parse_immonc_detail_html(html_content: str, url: str = "") -> Dict[str, Any]
         if "carport" in blob_full or "parking" in blob_full or "place de stationnement" in blob_full:
             parkings = 1
 
-    # 4. Détection du Négociateur Direct
+    # 4. Détection du Négociateur Direct (avec filtrage anti-faux-positifs 'Réf', 'Nous', 'Au', 'Loyer Hc')
     negotiator_name = None
     negotiator_phone = None
 
     contact_match = re.search(
-        r"(?:contactez|contacter|joindre|appelez|visites?,?\s*contactez)\s+([A-ZÀ-ÿ][a-zà-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zà-ÿ]+)?)\s+(?:au\s+|au\s*:?\s*|\(?T[eé]l\.?\s*:?\s*|\(?)\s*([0-9]{2}[\.\s]?[0-9]{2}[\.\s]?[0-9]{2}|[0-9]{6})",
+        r"(?:contactez|contacter|joindre|appelez|visites?,?\s*contactez)\s+([A-ZÀ-ÿ][a-zà-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zà-ÿ]+)?)\s+(?:au\s+|au\s*:?\s*|\(?T[eé]l\.?\s*:?\s*|\(?)\s*([0-9]{2}[\.\s]?[0-9]{2}[\.\s]?[0-9]{2}|[0-9]{6})(?!\s*(?:F\b|XPF\b|CFP\b|€))",
         full_description,
         re.IGNORECASE
     )
     if contact_match:
-        cand_name = contact_match.group(1).strip()
-        # Enlever les petits mots de liaison parasites éventuels
-        cand_name = re.sub(r"\s+\b(?:au|sur|par|le|la|les|directement)\b.*$", "", cand_name, flags=re.IGNORECASE).strip()
-        if cand_name.lower() not in ("l'agence", "notre agence", "l agence", "agence", "une", "visite", "visiter"):
-            negotiator_name = cand_name.capitalize()
+        cand_name = _clean_candidate_person_name(contact_match.group(1))
+        if is_valid_person_name(cand_name):
+            negotiator_name = cand_name.title()
         raw_num = contact_match.group(2).strip()
         num_clean = re.sub(r"[^\d]", "", raw_num)
         if len(num_clean) == 6:

@@ -323,3 +323,109 @@ Contact : Manu – 98.72.66"""
     assert "98.72.66" not in all_body_str
 
 
+def test_villa_f5_haut_magenta_atomic_decomposition_and_levels():
+    """
+    Valide sur le cas de référence 'Maison F5 à Nouméa (Haut-magenta)' (bienmeloger.nc_517911) :
+    1. Le retrait intégral des balises [IMG: https://...] sans résidu '//api.bienmeloger.nc'.
+    2. La séparation de l'accroche entre Cadre de vie (135 m², Haut Magenta, calme) et Extérieurs (4 ares avec piscine).
+    3. La décomposition atomique par niveau (RDC vs À l'étage) de toutes les pièces (séjour, cuisine, bureau, 2 chambres, SDB/WC, SDE, WC indépendant, garage + buanderie, 3e chambre + dressing + SDE/WC).
+    4. La décomposition des équipements de confort (climatisation, alarme, chauffe-eau solaire, panneaux photovoltaïques) dans 'prestations_complementaires'.
+    5. L'extraction de 'Stéphane' au '+687 78.61.30'.
+    """
+    raw_text = """[IMG: https://api.bienmeloger.nc/ listings/images/79263869-c7ac-4bb4-b421-01ab8282b2fd] EXCLUSIVITÉ
+
+Située dans un environnement calme, sur le secteur de Haut Magenta et à proximité immédiate de toutes les commodités, découvrez cette charmante villa F5 duplex, en copropriété, offrant une superficie habitable de 135 m² sur un terrain clos de 4 ares avec piscine. 
+
+
+
+Au rez-de-chaussée, la maison offre un bel espace de vie composé d'un séjour/salle à manger ouvrant sur une terrasse couverte, une cuisine ouverte entièrement aménagée et équipée, un dégagement distribuant un bureau et deux chambres avec placards, dont une bénéficiant de sa propre salle de bains avec WC. Une seconde salle d'eau, un WC indépendant ainsi qu'un garage avec espace buanderie viennent compléter ce niveau.
+
+
+
+À l'étage, vous trouverez une troisième chambre avec dressing, accompagnée de sa salle d'eau avec WC.
+
+
+
+Pour un confort optimal, la villa est entièrement climatisée et dispose d'un système d'alarme, d'un chauffe-eau solaire ainsi que de panneaux photovoltaïques.
+
+
+
+Contactez Stéphane au 78 61 30 pour tout renseignement complémentaire ou organiser une visite."""
+
+    res = structure_description(raw_text, property_type="MAISON")
+    assert res["has_structured"] is True
+
+    # 1. Contact Stéphane
+    assert len(res["direct_contacts"]) == 1
+    stephane = res["direct_contacts"][0]
+    assert stephane["name"] == "Stéphane"
+    assert "78.61.30" in stephane["phone"]
+
+    sec_by_key = {s["key"]: s["items"] for s in res["sections"]}
+    all_items = [it for s in res["sections"] for it in s["items"]]
+    all_str = " | ".join(all_items).lower()
+
+    # 2. Zéro résidu d'URL ou de balise [IMG:
+    assert "img:" not in all_str
+    assert "bienmeloger" not in all_str
+    assert "http" not in all_str
+
+    # 3. Cadre de vie
+    cadre_str = " ".join(sec_by_key.get("cadre_vie", [])).lower()
+    assert "haut magenta" in cadre_str
+    assert "135 m²" in cadre_str
+    assert "commodités" in cadre_str
+
+    # 4. Pièces de vie (RDC)
+    vie_str = " ".join(sec_by_key.get("pieces_de_vie", [])).lower()
+    assert "séjour" in vie_str and "(rdc)" in vie_str
+    assert "cuisine ouverte" in vie_str and "(rdc)" in vie_str
+
+    # 5. Espace nuit (RDC et À l'étage)
+    nuit_str = " ".join(sec_by_key.get("espace_nuit", [])).lower()
+    assert "bureau (rdc)" in nuit_str
+    assert "2 chambres avec placards" in nuit_str and "(rdc)" in nuit_str
+    assert "seconde salle d'eau (rdc)" in nuit_str
+    assert "wc indépendant (rdc)" in nuit_str
+    assert "3ème chambre avec dressing" in nuit_str and "(à l'étage)" in nuit_str
+    assert "salle d'eau" in nuit_str and "wc" in nuit_str
+
+    # 6. Extérieurs
+    ext_str = " ".join(sec_by_key.get("exterieurs", [])).lower()
+    assert "4 ares" in ext_str and "piscine" in ext_str
+    assert "terrasse couverte (rdc)" in ext_str
+
+    # 7. Stationnement & Annexes
+    park_str = " ".join(sec_by_key.get("stationnement_annexes", [])).lower()
+    assert "garage avec espace buanderie (rdc)" in park_str
+
+    # 8. Équipements & Prestations complémentaires
+    prest_str = " ".join(sec_by_key.get("prestations_complementaires", [])).lower()
+    assert "climatisée" in prest_str
+    assert "alarme" in prest_str
+    assert "chauffe-eau solaire" in prest_str
+    assert "panneaux photovoltaïques" in prest_str
+
+
+def test_maison_f4_paita_immonc_banner_and_negotiator_filter():
+    """
+    Valide sur le cas réel 'Maison F4 à Païta' (immonc_5332681) :
+    1. Le retrait de la bannière statique '<h5>ideal investissement, actuellement loué </h5><h4>f4 avec jardin</h4>'.
+    2. L'absence du faux négociateur 'Réf' ('Contactez-nous au 24.06.10 (Réf : VMA200)').
+    """
+    raw_paita = """<h5>ideal investissement, actuellement loué </h5><h4>f4 avec jardin</h4><p>Belle opportunité sur Païta ! Découvrez cette agréable maison F4 de 94 m² habitables environ, implantée sur un terrain plat et entièrement clôturé de 5a06ca.</p><p>Elle se compose d'un séjour lumineux, d'une cuisine équipée, de trois chambres climatisées avec placards, d'une salle d'eau et d'un WC indépendant.</p><p>À l'extérieur, vous profiterez d'une terrasse couverte et d'un carbet.</p><p>Contactez-nous au 24.06.10 (Réf : VMA200)</p>"""
+
+    res = structure_description(raw_paita, property_type="MAISON")
+    all_items = [it for s in res["sections"] for it in s["items"]]
+    all_str = " ".join(all_items).lower()
+
+    # La bannière parasite 'ideal investissement, actuellement loué' doit être totalement absente
+    assert "ideal investissement" not in all_str
+    assert "actuellement loué" not in all_str
+
+    # Aucun faux négociateur 'Réf' ne doit être extrait
+    assert not any(c["name"].lower() in ("réf", "ref", "nous") for c in res["direct_contacts"])
+    assert "24.06.10" in (res["agency_metadata"]["phone"] or "")
+
+
+

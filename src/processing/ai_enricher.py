@@ -27,6 +27,9 @@ from src.processing.description_structurer import (
     split_compound_line,
     classify_bullet_or_sentence,
     is_contact_or_boilerplate_line,
+    strip_technical_noise,
+    synthesize_atomic_bullet,
+    is_valid_person_name,
     CATEGORY_DEFINITIONS,
     STOP_NAMES,
 )
@@ -54,21 +57,22 @@ DEFAULT_SYSTEM_PROMPT = (
     "Tu es le moteur d'analyse immobilière de référence en Nouvelle-Calédonie (Sentinel ImmoNC).\n"
     "Analyse l'annonce et réponds EXCLUSIVEMENT en JSON strict et 100 % en FRANÇAIS (aucun mot anglais comme 'kitchen' ou 'bedroom').\n\n"
     "1. CONTACTS & NÉGOCIATEURS ('direct_contacts') :\n"
-    "- Négociateur nommé (ex: 'Céline : 73.06.00', 'Florian au 75.02.30', 'Manu 98.72.66') -> name=Prénom/Nom, role='Négociateur', phone=numéro.\n"
+    "- Négociateur nommé (ex: 'Céline : 73.06.00', 'Stéphane au 78 61 30', 'Manu 98.72.66') -> name=Prénom/Nom, role='Négociateur', phone=numéro.\n"
     "- Mention 'contactez l'agence au XX.XX.XX' sans prénom -> name=nom de l'agence (champ 'agency'), role='Agence', phone=numéro.\n"
     "- Aucun contact dans le texte -> []. ZÉRO invention.\n\n"
     "2. SPÉCIFICATIONS TECHNIQUES ('technical_specs') :\n"
-    "- charges_mensuelles_xpf (entier XPF ou null), etage (texte ou null), has_elevator (bool ou null), parking_detail (texte ou null), surface_terrasse_m2 (flottant ou null), standing (texte ou null).\n\n"
+    "- charges_mensuelles_xpf (entier XPF de charges de copropriété ou null ; ne jamais extraire un loyer hors charges), etage (texte ou null), has_elevator (bool ou null), parking_detail (texte ou null), surface_terrasse_m2 (flottant ou null), standing (texte ou null).\n\n"
     "3. RUBRIQUES NORMALISÉES ('rubriques') :\n"
-    "Répartis TOUTES les informations du texte dans ces clés fixes sous forme de puces complètes en français commençant par une majuscule.\n"
-    "RÈGLE D'OR : Ne coupe JAMAIS une surface ou un détail de son nom (écris 'Terrasse couverte de 15 m²' et JAMAIS '15m²' seul ; écris 'Terrain d'environ 16 ares' et JAMAIS '16 ares' seul ; conserve '2 salles de bain dont 1 privative').\n"
-    "- 'cadre_vie' : Type de bien, typologie (F2, F3, F4...), quartier, environnement (calme, proche commodités), résidence, étage.\n"
+    "Décompose les phrases complexes en puces nominales atomiques courtes (1 fait par puce, commençant par une majuscule, en conservant le niveau '(RDC)' ou '(À l'étage)' si mentionné).\n"
+    "RÈGLE D'OR : Ne coupe JAMAIS une surface ou un détail de son nom (écris 'Terrasse couverte de 15 m²' et JAMAIS '15m²' seul ; écris 'Terrain clos de 4 ares avec piscine' et JAMAIS '4 ares' seul ; conserve '2 chambres avec placards dont 1 avec salle de bains et WC').\n"
+    "- 'cadre_vie' : Type de bien, typologie (F2, F3, F4, F5...), surface habitable (m²), quartier, environnement (calme, proche commodités), résidence, étage.\n"
     "- 'services_residence' : Ascenseur, sécurité, vidéosurveillance, gardien, salle de sport, commerces de l'immeuble.\n"
-    "- 'pieces_de_vie' : Séjour, salon, cuisine équipée, buanderie.\n"
-    "- 'espace_nuit' : Chambres (avec climatisation/placards), salles de bain/eau (avec détails), WC — OU surfaces de bureaux, pièce principale et sanitaires si bien commercial.\n"
+    "- 'pieces_de_vie' : Séjour, salon, salle à manger, cuisine équipée, buanderie.\n"
+    "- 'espace_nuit' : Chambres (avec placards/dressing), bureau, salles de bain/eau (avec détails), WC — OU surfaces de bureaux, pièce principale et sanitaires si bien commercial.\n"
     "- 'exterieurs' : Terrain (en ares ou m²), terrasse/varangue (avec m²), jardin, piscine, vue.\n"
-    "- 'stationnement_annexes' : Garage fermé, parking couvert/sécurisé, carport, cellier, box, dock/réserve.\n"
-    "- 'conditions_modalites' : Prix de vente, loyer, charges de copropriété, modalités."
+    "- 'stationnement_annexes' : Garage fermé (avec buanderie), parking couvert/sécurisé, carport, cellier, box, dock/réserve.\n"
+    "- 'prestations_complementaires' : Climatisation globale, système d'alarme, chauffe-eau solaire, panneaux photovoltaïques, volets roulants, fibre, portail électrique, groupe électrogène.\n"
+    "- 'conditions_modalites' : Prix de vente, loyer, charges de copropriété, dépôt de garantie, modalités."
 )
 
 
@@ -346,7 +350,7 @@ def _sanitize_ai_contacts(
         raw_contacts = []
 
     clean_agency_name = normalize_agency_name(agency_name)
-    desc_clean = fix_mojibake(raw_description or "")
+    desc_clean = strip_technical_noise(fix_mojibake(raw_description or ""))
     desc_lower = desc_clean.lower()
 
     # Numéros de téléphone présents dans la description
@@ -413,7 +417,7 @@ def _sanitize_ai_contacts(
                 name_grounded = True
                 c_name = clean_agency_name
                 c_role = "Agence"
-            else:
+            elif is_valid_person_name(c_name):
                 name_words = [w for w in re.split(r'[\s\-_]+', name_lower) if len(w) >= 3 and w not in STOP_NAMES]
                 if name_words and all(w in desc_lower for w in name_words):
                     name_grounded = True
@@ -475,12 +479,15 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
     if not isinstance(raw_sections, (list, dict)):
         return []
 
-    full_context = fix_mojibake(f"{title} {raw_description}").lower()
+    clean_raw_desc = strip_technical_noise(fix_mojibake(raw_description or ""))
+    full_context = fix_mojibake(f"{title} {clean_raw_desc}").lower()
     full_context_clean = re.sub(r'[\s\-_.,;:]+', ' ', full_context)
 
+    prop_upper = property_type.upper()
+    is_residential_or_land = any(r in prop_upper for r in ("MAISON", "VILLA", "APPARTEMENT", "STUDIO", "DUPLEX", "TERRAIN"))
     is_commercial = (
-        any(t in property_type.upper() for t in ("COMMERCIAL", "BUREAU", "DOCK", "LOCAL"))
-        or any(k in full_context for k in ("bureau", "dock", "local commercial", "entrepôt", "commerce", "professionnel", "activité tertiaire"))
+        any(t in prop_upper for t in ("COMMERCIAL", "BUREAU", "DOCK", "LOCAL"))
+        or (not is_residential_or_land and any(k in full_context for k in ("plateau de bureaux", "dock", "local commercial", "entrepôt", "commerce", "professionnel", "activité tertiaire", "bureau")))
     )
 
     def _is_bullet_grounded(bullet: str) -> bool:
@@ -488,7 +495,7 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
             return True
         b_clean = format_bullet_uniform(fix_mojibake(bullet)).strip()
         b_lower = b_clean.lower()
-        if any(ph in b_lower for ph in ("<fait", "placeholder", "exemple", "<cle", "<titre")):
+        if any(ph in b_lower for ph in ("<fait", "placeholder", "exemple", "<cle", "<titre", "[img:", "http://", "https://", "api.bienmeloger")):
             return False
 
         STOP_WORDS = {
@@ -521,8 +528,8 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
     def _collect_raw_strings(obj: Any) -> List[str]:
         out: List[str] = []
         if isinstance(obj, str):
-            s = fix_mojibake(obj).strip()
-            if s and s.upper() not in NOT_BULLET_TITLES and not s.startswith("<"):
+            s = strip_technical_noise(fix_mojibake(obj)).strip()
+            if s and s.upper() not in NOT_BULLET_TITLES and not s.startswith("<") and not re.search(r'(?:\[img:|https?://|//api\.)', s, re.I):
                 out.append(s)
         elif isinstance(obj, list):
             for sub in obj:
@@ -535,7 +542,7 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
                     if k in ("key", "icon"):
                         continue
                     if k in ("title", "name", "desc") and isinstance(v, str):
-                        if not any(h in v for h in ("Bureaux", "Stationnement", "Implantation", "Extérieur", "Pièces", "Espace", "Cadre", "Modalités", "Services", "Synthèse")):
+                        if not any(h in v for h in ("Bureaux", "Stationnement", "Implantation", "Extérieur", "Pièces", "Espace", "Cadre", "Modalités", "Services", "Synthèse", "Équipements")):
                             out.extend(_collect_raw_strings(v))
                     elif isinstance(v, (list, dict)):
                         out.extend(_collect_raw_strings(v))
@@ -560,14 +567,15 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
         if re.match(r'^(?:environ\s*|~)?\d+(?:[.,]\d+)?\s*ares?$', b_norm, flags=re.IGNORECASE):
             b_norm = f"Terrain d'environ {b_norm}"
 
-        # Décomposition si la puce IA contient elle-même une énumération
+        # Décomposition atomique et synthèse nominale si la puce IA contient une énumération ou phrase narrative
         for seg in split_compound_line(b_norm):
-            seg_u = format_bullet_uniform(seg)
+            seg_synth = synthesize_atomic_bullet(seg)
+            seg_u = format_bullet_uniform(seg_synth)
             if seg_u and _is_bullet_grounded(seg_u):
                 repaired_bullets.append(seg_u)
 
-    # 3. Exécution du moteur déterministe Tier-1 pour garantir Zéro-Perte et récupérer les contacts à exclure
-    t1_fallback = structure_description(raw_description, property_type="COMMERCIAL" if is_commercial else property_type)
+    # 3. Exécution du moteur déterministe Tier-1 pour garantir Zéro-Perte, propagation des niveaux (RDC / À l'étage) et contacts à exclure
+    t1_fallback = structure_description(clean_raw_desc, property_type="COMMERCIAL" if is_commercial else property_type)
     t1_contacts = t1_fallback.get("direct_contacts", [])
     t1_sections = t1_fallback.get("sections", [])
 
@@ -581,32 +589,34 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
             return
         if is_contact_or_boilerplate_line(b_fmt, t1_contacts):
             return
-        # Éviter les mini-fragments de 1 mot déjà présents dans une phrase plus complète
         target_list = categorized_items.get(cat_key, categorized_items["prestations_complementaires"])
         b_low = b_fmt.lower()
+        b_core = re.sub(r'\s*\((?:rdc|à l\'étage|en mezzanine|en sous-sol|au niveau inférieur)\)\s*$', '', b_low, flags=re.I).strip()
         for idx, existing in enumerate(target_list):
             ex_low = existing.lower()
-            if b_low == ex_low or b_low in ex_low:
+            ex_core = re.sub(r'\s*\((?:rdc|à l\'étage|en mezzanine|en sous-sol|au niveau inférieur)\)\s*$', '', ex_low, flags=re.I).strip()
+            if b_low == ex_low or b_low in ex_low or b_core == ex_core or b_core in ex_core:
                 return
-            if ex_low in b_low:
-                # La nouvelle puce est plus complète (ex: "2 salles de bain dont 1 privative" > "2 salles de bain")
-                target_list[idx] = b_fmt
+            if ex_low in b_low or ex_core in b_core:
+                # Ne remplacer une puce existante que si la nouvelle apporte un complément réel (<= 95 car.) sans perdre le tag de niveau
+                has_level_tag = bool(re.search(r'\((?:rdc|à l\'étage|en mezzanine|en sous-sol|au niveau inférieur)\)$', existing, re.I))
+                if not has_level_tag and len(b_fmt) <= 95:
+                    target_list[idx] = b_fmt
                 return
         target_list.append(b_fmt)
 
-    for b in repaired_bullets:
-        # Ignorer les fragments de localisation isolés (ex: "6ème KM" seul alors que le contexte complet existe)
-        if len(b.split()) <= 2 and re.match(r'^\d+(?:er|ème|eme)\s+km$', b.lower()):
-            continue
-        c_key = classify_bullet_or_sentence(b)
-        _add_bullet_to_cat(c_key, b)
-
-    # 5. Réconciliation Zéro-Perte avec les sections Tier-1 déterministes
-    # Toute information réelle du texte brut oubliée ou tronquée par le LLM est réintégrée à sa place exacte
+    # 5. Socle primaire Zéro-Perte issu de l'analyse grammaticale et architecturale Tier-1 (préserve RDC / À l'étage)
     for t1_sec in t1_sections:
         sec_key = t1_sec.get("key", "cadre_vie")
         for t1_item in t1_sec.get("items", []):
             _add_bullet_to_cat(sec_key, t1_item)
+
+    # 6. Enrichissement complémentaire par les puces IA ancrées non redondantes
+    for b in repaired_bullets:
+        if len(b.split()) <= 2 and re.match(r'^\d+(?:er|ème|eme)\s+km$', b.lower()):
+            continue
+        c_key = classify_bullet_or_sentence(b)
+        _add_bullet_to_cat(c_key, b)
 
     # 6. Assemblage final dans l'ordre canonique immuable avec titres et icônes standardisés
     category_titles = {c["key"]: (c["title"], c["icon"]) for c in CATEGORY_DEFINITIONS}
@@ -652,27 +662,45 @@ def _sanitize_ai_technical_specs(raw_specs: Any, raw_description: str = "") -> D
     if not isinstance(raw_specs, dict):
         raw_specs = {}
 
-    desc_clean = fix_mojibake(raw_description or "")
+    desc_clean = strip_technical_noise(fix_mojibake(raw_description or ""))
     desc_lower = desc_clean.lower()
 
-    # 1. Charges de copropriété (XPF)
+    # 1. Charges de copropriété (XPF) — avec garde-fou anti-.00 et anti-'hors charges'
     charges_raw = raw_specs.get("charges_mensuelles_xpf")
     charges_val: Optional[int] = None
     desc_digits = re.sub(r"[^\d]", "", desc_clean)
-    if charges_raw is not None:
+    has_valid_charge_context = bool(re.search(r"(?<!hors\s)(?<!sans\s)(?<!toute\s)(?<!aucune\s)\bcharges?\b(?!\s*comprises|\s*incluses)", desc_lower))
+    if charges_raw is not None and has_valid_charge_context:
         try:
-            c_digits = re.sub(r"[^\d]", "", str(charges_raw))
+            raw_chg_str = re.sub(r"[.,]\d{1,2}\s*$", "", str(charges_raw).strip())
+            c_digits = re.sub(r"[^\d]", "", raw_chg_str)
             if c_digits:
                 val = int(c_digits)
-                if 500 <= val <= 300_000 and c_digits in desc_digits:
+                if 500 <= val <= 150_000 and c_digits in desc_digits:
                     charges_val = val
         except Exception:
             charges_val = None
-    if charges_val is None:
-        m_chg = re.search(r"charges?\s*(?:mensuelles?|de\s+copropri[eé]t[eé]|copro)?\s*[:\s]?\s*(\d+[\d\s]*)(?:\.00)?\s*(?:f|xpf)?", desc_clean, re.I)
+    if charges_val is None and has_valid_charge_context:
+        m_chg = re.search(
+            r"(?<!hors\s)(?<!sans\s)(?<!toute\s)(?<!aucune\s)\bcharges?\s*(?:mensuelles?|de\s+copropri[eé]t[eé]|copro)\s*[:=\s]?\s*(\d{1,3}(?:[\s.]?\d{3})*|\d{3,6})(?:[.,]\d{1,2})?\s*(?:f\s*cfp|xpf|f\b|cfp|/mois)?",
+            desc_clean,
+            re.I
+        )
+        if not m_chg:
+            m_chg = re.search(
+                r"(?<!hors\s)(?<!sans\s)(?<!toute\s)(?<!aucune\s)\bcharges?\s*(?::|=|de|d['’]environ)\s*(\d{1,3}(?:[\s.]?\d{3})*|\d{3,6})(?:[.,]\d{1,2})?\s*(?:f\s*cfp|xpf|f\b|cfp)",
+                desc_clean,
+                re.I
+            )
+        if not m_chg:
+            m_chg = re.search(
+                r"(\d{1,3}(?:[\s.]?\d{3})+|\d{3,6})(?:[.,]\d{1,2})?\s*(?:f\s*cfp|xpf|f)\s*(?:/mois\s*)?de\s+charges?\b",
+                desc_clean,
+                re.I
+            )
         if m_chg:
             c_digs = re.sub(r"[^\d]", "", m_chg.group(1))
-            if c_digs and int(c_digs) > 0:
+            if c_digs and 500 <= int(c_digs) <= 150_000:
                 charges_val = int(c_digs)
 
     # 2. Étage
@@ -775,10 +803,10 @@ def enrich_listing_with_ai(
     system_prompt = custom_prompt or cfg.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
     timeout_sec = float(cfg.get("timeout_seconds", 40.0))
 
-    # Extraction et nettoyage systématique des métadonnées d'entrée
+    # Extraction et nettoyage systématique des métadonnées d'entrée (avec retrait des balises [IMG: ...] et bannières parasites)
     if isinstance(listing_data, dict):
         listing_id = str(listing_data.get("id") or f"custom_{int(time.time())}")
-        raw_text = fix_mojibake(str(listing_data.get("description") or listing_data.get("raw_text") or ""))
+        raw_text = strip_technical_noise(fix_mojibake(str(listing_data.get("description") or listing_data.get("raw_text") or ""))).strip()
         prop_type = str(listing_data.get("property_type") or listing_data.get("category") or "").upper()
         agency = normalize_agency_name(str(listing_data.get("agencyName") or listing_data.get("agency_name") or ""))
         title = fix_mojibake(str(listing_data.get("title") or ""))
@@ -786,7 +814,7 @@ def enrich_listing_with_ai(
         quartier = str(listing_data.get("quartier") or "")
         price = listing_data.get("currentPrice") or listing_data.get("price_xpf")
     else:
-        raw_text = fix_mojibake(str(listing_data))
+        raw_text = strip_technical_noise(fix_mojibake(str(listing_data))).strip()
         listing_id = f"text_{hashlib.md5(raw_text.encode()).hexdigest()[:10]}"
         prop_type = "COMMERCIAL" if any(k in raw_text.lower() for k in ["bureau", "dock", "local commercial"]) else "APPARTEMENT"
         agency = ""
@@ -844,6 +872,7 @@ def enrich_listing_with_ai(
         f'    "espace_nuit": [],\n'
         f'    "exterieurs": [],\n'
         f'    "stationnement_annexes": [],\n'
+        f'    "prestations_complementaires": [],\n'
         f'    "conditions_modalites": []\n'
         f'  }}\n'
         f"}}"

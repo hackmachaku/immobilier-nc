@@ -387,17 +387,22 @@ class ListingCleaner:
             transaction_type=trans_type,
         )
 
-        # Extraction des charges mensuelles
+        # Extraction des charges mensuelles (avec retrait des décimales .00 et exclusion de 'hors charges')
         charges: Optional[int] = None
         if getattr(raw, "raw_charges", None):
-            clean_c = re.sub(r"[^\d]", "", str(raw.raw_charges))
-            if clean_c:
+            raw_c_str = re.sub(r"[.,]\d{1,2}\s*$", "", str(raw.raw_charges).strip())
+            clean_c = re.sub(r"[^\d]", "", raw_c_str)
+            if clean_c and 500 <= int(clean_c) <= 150_000:
                 charges = int(clean_c)
         elif raw.description:
-            m_chg = re.search(r"charges?\s*(?:mensuelles?|de\s+copropri[eé]t[eé]|copro)?\s*[:\s]?\s*(\d+[\d\s]*)(?:\.00)?\s*(?:f|xpf)?", raw.description, re.IGNORECASE)
+            m_chg = re.search(
+                r"(?<!hors\s)(?<!sans\s)(?<!toute\s)(?<!aucune\s)\bcharges?\s*(?:mensuelles?|de\s+copropri[eé]t[eé]|copro)\s*[:=\s]?\s*(\d{1,3}(?:[\s.]?\d{3})*|\d{3,6})(?:[.,]\d{1,2})?\s*(?:f\s*cfp|xpf|f\b|cfp|/mois)?",
+                raw.description,
+                re.IGNORECASE
+            )
             if m_chg:
                 clean_c = re.sub(r"[^\d]", "", m_chg.group(1))
-                if clean_c:
+                if clean_c and 500 <= int(clean_c) <= 150_000:
                     charges = int(clean_c)
 
         # Surface terrasse fallback
@@ -453,16 +458,24 @@ class ListingCleaner:
                 comp_details_json = None
 
         # Négociateur direct et contact téléphonique
+        from src.processing.description_structurer import (
+            structure_description,
+            strip_technical_noise,
+            is_valid_person_name,
+            _clean_candidate_person_name,
+        )
+        cleaned_description_text = strip_technical_noise(raw.description or "").strip()
         direct_negotiator = getattr(raw, "direct_negotiator", None)
+        if direct_negotiator and not is_valid_person_name(_clean_candidate_person_name(direct_negotiator)):
+            direct_negotiator = None
         direct_phone = getattr(raw, "direct_phone", None)
-        if (not direct_negotiator or not direct_phone) and raw.description:
+        if (not direct_negotiator or not direct_phone) and cleaned_description_text:
             # 1. Détection via le moteur universel de contacts NC
             try:
-                from src.processing.description_structurer import structure_description
-                struct = structure_description(raw.description)
+                struct = structure_description(cleaned_description_text)
                 contacts = struct.get("direct_contacts", [])
                 if contacts:
-                    if not direct_negotiator and contacts[0].get("name"):
+                    if not direct_negotiator and contacts[0].get("name") and is_valid_person_name(contacts[0]["name"]):
                         direct_negotiator = contacts[0]["name"]
                     if not direct_phone and contacts[0].get("phone"):
                         direct_phone = contacts[0]["phone"]
@@ -472,16 +485,15 @@ class ListingCleaner:
             # 2. Fallback regex ciblée
             if not direct_negotiator or not direct_phone:
                 m_neg = re.search(
-                    r"(?:contactez|contacter|joindre|appelez|visites?,?\s*contactez)\s+([A-ZÀ-ÿ][a-zà-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zà-ÿ]+)?)\s+(?:au\s+|au\s*:?\s*|\(?T[eé]l\.?\s*:?\s*|\(?)\s*([0-9]{2}[\.\s]?[0-9]{2}[\.\s]?[0-9]{2}|[0-9]{6})",
-                    raw.description or "",
+                    r"(?:contactez|contacter|joindre|appelez|visites?,?\s*contactez)\s+([A-ZÀ-ÿ][a-zà-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zà-ÿ]+)?)\s+(?:au\s+|au\s*:?\s*|\(?T[eé]l\.?\s*:?\s*|\(?)\s*([0-9]{2}[\.\s]?[0-9]{2}[\.\s]?[0-9]{2}|[0-9]{6})(?!\s*(?:F\b|XPF\b|CFP\b|€))",
+                    cleaned_description_text,
                     re.IGNORECASE
                 )
                 if m_neg:
-                    cand_name = m_neg.group(1).strip()
-                    cand_name = re.sub(r"\s+\b(?:au|sur|par|le|la|les|directement)\b.*$", "", cand_name, flags=re.IGNORECASE).strip()
-                    if cand_name.lower() not in ("l'agence", "notre agence", "l agence", "agence", "une", "visite", "visiter"):
+                    cand_name = _clean_candidate_person_name(m_neg.group(1))
+                    if is_valid_person_name(cand_name):
                         if not direct_negotiator:
-                            direct_negotiator = cand_name.capitalize()
+                            direct_negotiator = cand_name.title()
                     if not direct_phone:
                         raw_num = m_neg.group(2).strip()
                         num_clean = re.sub(r"[^\d]", "", raw_num)
@@ -493,7 +505,7 @@ class ListingCleaner:
             source_id=raw.source_id,
             url=raw.url,
             title=raw.title.strip(),
-            description=raw.description.strip() if raw.description else "",
+            description=cleaned_description_text,
             transaction_type=trans_type,
             property_type=prop_type,
             commune=commune,

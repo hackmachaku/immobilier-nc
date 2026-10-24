@@ -338,3 +338,61 @@ def test_bureau_pk6_canonical_reconciliation_no_terrain():
     assert "30 m²" in bureaux_str
     assert "3 bureaux" in bureaux_str
 
+
+def test_haut_magenta_and_paita_ai_reconciliation_zero_loss():
+    """
+    Valide que _sanitize_ai_sections et _sanitize_ai_technical_specs :
+    1. Éliminent les fragments d'URL '[IMG: https' et '//api.bienmeloger.nc' même si le LLM les a recopiés.
+    2. Conservent les tags de niveau '(RDC)' et '(À l'étage)' ainsi que la rubrique 'prestations_complementaires'
+       sur la Villa F5 Duplex Haut Magenta sans doublon.
+    3. Corrigent les charges mensuelles '3000.00' en 3000 F (et jamais 300 000 F) et rejettent 'hors charges'.
+    """
+    from src.processing.ai_enricher import _sanitize_ai_sections, _sanitize_ai_technical_specs
+
+    raw_magenta = """[IMG: https://api.bienmeloger.nc/ listings/images/79263869-c7ac-4bb4-b421-01ab8282b2fd] EXCLUSIVITÉ
+
+Située dans un environnement calme, sur le secteur de Haut Magenta et à proximité immédiate de toutes les commodités, découvrez cette charmante villa F5 duplex, en copropriété, offrant une superficie habitable de 135 m² sur un terrain clos de 4 ares avec piscine. 
+
+Au rez-de-chaussée, la maison offre un bel espace de vie composé d'un séjour/salle à manger ouvrant sur une terrasse couverte, une cuisine ouverte entièrement aménagée et équipée, un dégagement distribuant un bureau et deux chambres avec placards, dont une bénéficiant de sa propre salle de bains avec WC. Une seconde salle d'eau, un WC indépendant ainsi qu'un garage avec espace buanderie viennent compléter ce niveau.
+
+À l'étage, vous trouverez une troisième chambre avec dressing, accompagnée de sa salle d'eau avec WC.
+
+Pour un confort optimal, la villa est entièrement climatisée et dispose d'un système d'alarme, d'un chauffe-eau solaire ainsi que de panneaux photovoltaïques.
+
+Contactez Stéphane au 78 61 30 pour tout renseignement complémentaire ou organiser une visite."""
+
+    polluted_ai_rubriques = {
+        "cadre_vie": ["[IMG: https", "//api.bienmeloger.nc/ listings/images/79263869-c7ac-4bb4-b421-01ab8282b2fd] EXCLUSIVITÉ"],
+        "espace_nuit": [
+            "Au rez-de-chaussée, la maison offre un bel espace de vie composé d'un séjour/salle à manger ouvrant sur une terrasse couverte, une cuisine ouverte entièrement aménagée et équipée, un dégagement distribuant un bureau et deux chambres avec placards, dont une bénéficiant de sa propre salle de bains avec WC",
+            "Une seconde salle d'eau, un WC indépendant ainsi qu'un garage avec espace buanderie viennent compléter ce niveau",
+            "Pour un confort optimal, la villa est entièrement climatisée et dispose d'un système d'alarme, d'un chauffe-eau solaire ainsi que de panneaux photovoltaïques"
+        ],
+        "exterieurs": [
+            "Située dans un environnement calme, sur le secteur de Haut Magenta et à proximité immédiate de toutes les commodités, découvrez cette charmante villa F5 duplex, en copropriété, offrant une superficie habitable de 135 m² sur un terrain clos de 4 ares avec piscine"
+        ]
+    }
+
+    sections = _sanitize_ai_sections(polluted_ai_rubriques, raw_description=raw_magenta, title="Maison F5 à Nouméa (Haut-magenta)", property_type="MAISON")
+    sec_by_key = {s["key"]: s["items"] for s in sections}
+    all_items = [it for s in sections for it in s["items"]]
+    all_str = " | ".join(all_items).lower()
+
+    assert "img:" not in all_str
+    assert "bienmeloger" not in all_str
+    assert "prestations_complementaires" in sec_by_key
+    assert any("alarme" in it.lower() for it in sec_by_key["prestations_complementaires"])
+    assert any("chauffe-eau solaire" in it.lower() for it in sec_by_key["prestations_complementaires"])
+    assert any("panneaux photovoltaïques" in it.lower() for it in sec_by_key["prestations_complementaires"])
+    assert any("garage avec espace buanderie (rdc)" in it.lower() for it in sec_by_key["stationnement_annexes"])
+    assert any("3ème chambre avec dressing" in it.lower() and "(à l'étage)" in it.lower() for it in sec_by_key["espace_nuit"])
+
+    # Vérification anti-.00 x100 sur les charges mensuelles
+    specs_dec = _sanitize_ai_technical_specs({"charges_mensuelles_xpf": "3000.00"}, raw_description="Charges mensuelles : 3000.00 F")
+    assert specs_dec["charges_mensuelles_xpf"] == 3000
+
+    # Vérification anti-'hors charges'
+    specs_hc = _sanitize_ai_technical_specs({}, raw_description="Loyer hors charges : 150 000 F CFP/mois")
+    assert specs_hc["charges_mensuelles_xpf"] is None
+
+
