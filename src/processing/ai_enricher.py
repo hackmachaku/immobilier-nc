@@ -24,6 +24,7 @@ from src.processing.description_structurer import (
     structure_description,
     normalize_nc_phone,
     format_bullet_uniform,
+    normalize_header_banner,
     split_compound_line,
     classify_bullet_or_sentence,
     is_contact_or_boilerplate_line,
@@ -553,7 +554,7 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
     # 2. Réparation des fragments numériques orphelins (ex: ["1 terrasse couverte", "15m²"] ou ["16 ares"])
     repaired_bullets: List[str] = []
     for raw_b in raw_extracted_strings:
-        b_norm = format_bullet_uniform(raw_b)
+        b_norm = normalize_header_banner(format_bullet_uniform(raw_b))
         if not b_norm:
             continue
 
@@ -570,7 +571,9 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
         # Décomposition atomique et synthèse nominale si la puce IA contient une énumération ou phrase narrative
         for seg in split_compound_line(b_norm):
             seg_synth = synthesize_atomic_bullet(seg)
-            seg_u = format_bullet_uniform(seg_synth)
+            if not seg_synth:
+                continue
+            seg_u = normalize_header_banner(format_bullet_uniform(seg_synth))
             if seg_u and _is_bullet_grounded(seg_u):
                 repaired_bullets.append(seg_u)
 
@@ -584,7 +587,7 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
     categorized_items["prestations_complementaires"] = []
 
     def _add_bullet_to_cat(cat_key: str, bullet_text: str):
-        b_fmt = format_bullet_uniform(bullet_text)
+        b_fmt = normalize_header_banner(format_bullet_uniform(bullet_text))
         if not b_fmt or len(b_fmt) < 2:
             return
         if is_contact_or_boilerplate_line(b_fmt, t1_contacts):
@@ -598,9 +601,10 @@ def _sanitize_ai_sections(raw_sections: Any, raw_description: str = "", title: s
             if b_low == ex_low or b_low in ex_low or b_core == ex_core or b_core in ex_core:
                 return
             if ex_low in b_low or ex_core in b_core:
-                # Ne remplacer une puce existante que si la nouvelle apporte un complément réel (<= 95 car.) sans perdre le tag de niveau
+                # Ne remplacer une puce existante que si la nouvelle apporte un complément réel (<= 85 car.) sans perdre le tag de niveau ni réintroduire de verbe narratif
                 has_level_tag = bool(re.search(r'\((?:rdc|à l\'étage|en mezzanine|en sous-sol|au niveau inférieur)\)$', existing, re.I))
-                if not has_level_tag and len(b_fmt) <= 95:
+                has_narrative_verb = bool(re.search(r'\b(?:vous\s+séduira|se\s+compose|comprenant|découvrez|offre\s+un\s+cadre)\b|\?', b_low))
+                if not has_level_tag and not has_narrative_verb and len(b_fmt) <= 85:
                     target_list[idx] = b_fmt
                 return
         target_list.append(b_fmt)

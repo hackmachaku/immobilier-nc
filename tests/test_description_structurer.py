@@ -95,7 +95,8 @@ def test_extract_direct_contacts_multiple_agents():
 
 def test_clean_line_typography():
     assert clean_line_typography("✅ Grande terrasse couverte !!!!!!!") == "Grande terrasse couverte !"
-    assert clean_line_typography("✨✨ Cuisine équipée et aménagée ???") == "Cuisine équipée et aménagée ?"
+    assert clean_line_typography("✨✨ Cuisine équipée et aménagée ???") == "Cuisine équipée et aménagée"
+    assert clean_line_typography("?️ Chambre avec placard ????️") == "Chambre avec placard"
     assert clean_line_typography("• 2 chambres avec placards.....") == "2 chambres avec placards..."
     assert clean_line_typography("👉   Place de parking sécurisée   ") == "Place de parking sécurisée"
     assert clean_line_typography("❗️❗️ COUP DE COEUR ❗️❗️") == "COUP DE COEUR"
@@ -426,6 +427,69 @@ def test_maison_f4_paita_immonc_banner_and_negotiator_filter():
     # Aucun faux négociateur 'Réf' ne doit être extrait
     assert not any(c["name"].lower() in ("réf", "ref", "nous") for c in res["direct_contacts"])
     assert "24.06.10" in (res["agency_metadata"]["phone"] or "")
+
+
+def test_villa_f4_kone_immonc_5332720_partitive_enumeration_and_hooks():
+    """
+    Valide sur le cas réel signalé par l'utilisateur 'Maison F4 à Koné' (immonc_5332720) :
+    1. Normalisation de la bannière en majuscules 'A LOUER - VILLA F4 / VILLAGE DE KONE' -> 'Villa F4 — Village de Koné'.
+    2. Filtrage de la question rhétorique marketing 'Vous cherchez de l'espace, du confort et un emplacement pratique ?'.
+    3. Synthèse nominale de l'accroche narrative 'Cette villa F4 d'environ 115 m² vous séduira par ses volumes et sa situation idéale en plein centre du village.' -> 'Villa F4 d'environ 115 m² — Situation idéale en plein centre du village'.
+    4. Décomposition atomique intégrale de l'énumération partitive ('d'un séjour lumineux, d'une cuisine fonctionnelle, de trois chambres, d'une buanderie, d'une salle d'eau, d'un WC séparé, d'un espace de rangement ainsi que d'un garage') et ventilation dans les bonnes rubriques (Pièces de vie, Espace nuit, Stationnement & Annexes).
+    5. Nettoyage de la queue générique 'elle offre un cadre de vie pratique et agréable'.
+    6. Conservation intégrale du loyer 'Loyer charges comprises (Eau) : 105.000 XPF' dans 'conditions_modalites'.
+    """
+    raw_kone = """A LOUER - VILLA F4 / VILLAGE DE KONE<br /><br />Vous cherchez de l'espace, du confort et un emplacement pratique ? Cette villa F4 d'environ 115 m² vous séduira par ses volumes et sa situation idéale en plein centre du village.<br /><br />Elle se compose d'un séjour lumineux, d'une cuisine fonctionnelle, de trois chambres, d'une buanderie, d'une salle d'eau, d'un WC séparé, d'un espace de rangement ainsi que d'un garage.<br /><br />Située à proximité immédiate de toutes les commodités, elle offre un cadre de vie pratique et agréable.<br /><br />Loyer charges comprises (Eau) : 105.000 XPF<br /><br />Disponible immédiatement.<br /><br />Pour plus d'informations ou organiser une visite :<br />Contactez notre équipe au 47.25.55"""
+
+    res = structure_description(raw_kone, property_type="MAISON")
+    assert res["has_structured"] is True
+
+    sec_by_key = {s["key"]: s["items"] for s in res["sections"]}
+    all_items = [it for s in res["sections"] for it in s["items"]]
+    all_str = " | ".join(all_items)
+
+    # 1. Zéro question rhétorique ni verbe narratif résiduel
+    assert "?" not in all_str
+    assert "vous cherchez" not in all_str.lower()
+    assert "vous séduira" not in all_str.lower()
+    assert "elle se compose" not in all_str.lower()
+    assert "offre un cadre de vie" not in all_str.lower()
+    assert "A LOUER -" not in all_str
+
+    # 2. Cadre de vie
+    cadre_items = sec_by_key.get("cadre_vie", [])
+    cadre_str = " | ".join(cadre_items).lower()
+    assert "villa f4" in cadre_str
+    assert "115 m²" in cadre_str
+    assert "centre du village" in cadre_str
+    assert "proximité immédiate de toutes les commodités" in cadre_str
+
+    # 3. Pièces de vie (Séjour, Cuisine, Buanderie séparés en puces distinctes)
+    vie_items = sec_by_key.get("pieces_de_vie", [])
+    assert any("séjour lumineux" == it.lower() for it in vie_items)
+    assert any("cuisine fonctionnelle" == it.lower() for it in vie_items)
+    assert any("buanderie" == it.lower() for it in vie_items)
+    # Aucune chambre ni garage ne doit rester collé dans pieces_de_vie
+    vie_str = " ".join(vie_items).lower()
+    assert "chambre" not in vie_str
+    assert "garage" not in vie_str
+
+    # 4. Espace nuit (3 chambres, Salle d'eau, WC séparé en puces distinctes)
+    nuit_items = sec_by_key.get("espace_nuit", [])
+    assert any("3 chambres" == it.lower() for it in nuit_items)
+    assert any("salle d'eau" == it.lower() for it in nuit_items)
+    assert any("wc séparé" == it.lower() for it in nuit_items)
+
+    # 5. Stationnement & Annexes (Espace de rangement, Garage en puces distinctes)
+    stat_items = sec_by_key.get("stationnement_annexes", [])
+    assert any("espace de rangement" == it.lower() for it in stat_items)
+    assert any("garage" == it.lower() for it in stat_items)
+
+    # 6. Conditions & Modalités
+    cond_str = " | ".join(sec_by_key.get("conditions_modalites", [])).lower()
+    assert "105.000 xpf" in cond_str
+    assert "disponible immédiatement" in cond_str
+
 
 
 

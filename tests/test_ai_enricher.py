@@ -396,3 +396,50 @@ Contactez Stéphane au 78 61 30 pour tout renseignement complémentaire ou organ
     assert specs_hc["charges_mensuelles_xpf"] is None
 
 
+def test_villa_f4_kone_immonc_5332720_ai_reconciliation():
+    """
+    Valide sur le cas signalé par l'utilisateur 'Maison F4 à Autre (Koné)' (immonc_5332720) :
+    Même si le LLM recopie les paragraphes bruts non découpés (question rhétorique,
+    bannière 'A LOUER -', énumération partitive 'Elle se compose d'un séjour...'),
+    _sanitize_ai_sections les décompose et les ventile proprement sans résidu narratif.
+    """
+    from src.processing.ai_enricher import _sanitize_ai_sections
+
+    raw_kone = """A LOUER - VILLA F4 / VILLAGE DE KONE<br /><br />Vous cherchez de l'espace, du confort et un emplacement pratique ? Cette villa F4 d'environ 115 m² vous séduira par ses volumes et sa situation idéale en plein centre du village.<br /><br />Elle se compose d'un séjour lumineux, d'une cuisine fonctionnelle, de trois chambres, d'une buanderie, d'une salle d'eau, d'un WC séparé, d'un espace de rangement ainsi que d'un garage.<br /><br />Située à proximité immédiate de toutes les commodités, elle offre un cadre de vie pratique et agréable.<br /><br />Loyer charges comprises (Eau) : 105.000 XPF<br /><br />Disponible immédiatement.<br /><br />Pour plus d'informations ou organiser une visite :<br />Contactez notre équipe au 47.25.55"""
+
+    unsplit_ai_rubriques = {
+        "cadre_vie": [
+            "A LOUER - VILLA F4 / VILLAGE DE KONE",
+            "Vous cherchez de l'espace, du confort et un emplacement pratique ? Cette villa F4 d'environ 115 m² vous séduira par ses volumes et sa situation idéale en plein centre du village.",
+            "Située à proximité immédiate de toutes les commodités, elle offre un cadre de vie pratique et agréable."
+        ],
+        "pieces_de_vie": [
+            "Elle se compose d'un séjour lumineux, d'une cuisine fonctionnelle, de trois chambres, d'une buanderie, d'une salle d'eau, d'un WC séparé, d'un espace de rangement ainsi que d'un garage."
+        ],
+        "conditions_modalites": [
+            "Loyer charges comprises (Eau) : 105.000 XPF"
+        ]
+    }
+
+    sections = _sanitize_ai_sections(unsplit_ai_rubriques, raw_description=raw_kone, title="Maison F4 à Autre (Koné)", property_type="MAISON")
+    sec_by_key = {s["key"]: s["items"] for s in sections}
+    all_items = [it for s in sections for it in s["items"]]
+    all_str = " | ".join(all_items)
+
+    assert "?" not in all_str
+    assert "vous cherchez" not in all_str.lower()
+    assert "vous séduira" not in all_str.lower()
+    assert "elle se compose" not in all_str.lower()
+    assert "A LOUER -" not in all_str
+
+    assert any("séjour lumineux" == it.lower() for it in sec_by_key["pieces_de_vie"])
+    assert any("cuisine fonctionnelle" == it.lower() for it in sec_by_key["pieces_de_vie"])
+    assert any("buanderie" == it.lower() for it in sec_by_key["pieces_de_vie"])
+    assert any("3 chambres" == it.lower() for it in sec_by_key["espace_nuit"])
+    assert any("salle d'eau" == it.lower() for it in sec_by_key["espace_nuit"])
+    assert any("wc séparé" == it.lower() for it in sec_by_key["espace_nuit"])
+    assert any("espace de rangement" == it.lower() for it in sec_by_key["stationnement_annexes"])
+    assert any("garage" == it.lower() for it in sec_by_key["stationnement_annexes"])
+
+
+
