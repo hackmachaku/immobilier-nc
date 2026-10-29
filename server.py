@@ -367,7 +367,9 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
 
         limit = int(body.get("limit", 10))
         only_missing = bool(body.get("only_missing", True))
+        force_all = bool(body.get("force_all", False))
         model = body.get("model")
+        provider = body.get("provider")
 
         global _BATCH_AI_JOB
         if _BATCH_AI_JOB["running"]:
@@ -396,7 +398,9 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                     only_missing=only_missing,
                     custom_model=model,
                     stop_event=stop_event,
-                    progress_callback=_prog
+                    progress_callback=_prog,
+                    force_all=force_all,
+                    custom_provider=provider
                 )
                 _BATCH_AI_JOB["last_result"] = res
                 _CACHED_LISTINGS_PAYLOAD = None
@@ -470,12 +474,15 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
             except Exception:
                 pass
 
+        global _CACHED_LISTINGS_PAYLOAD
         result = enrich_listing_with_ai(
             listing_input,
             custom_prompt=custom_prompt,
             custom_model=custom_model,
-            force_refresh=force_refresh
+            force_refresh=force_refresh,
+            custom_provider=body.get("provider")
         )
+        _CACHED_LISTINGS_PAYLOAD = None
         self._send_json({"success": True, "data": result})
 
     def handle_post_ai_chat(self):
@@ -538,7 +545,7 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                 except (ValueError, TypeError):
                     limit_val = None
 
-            if not limit_val and _CACHED_LISTINGS_PAYLOAD is not None:
+            if not limit_val and "refresh" not in query_params and _CACHED_LISTINGS_PAYLOAD is not None:
                 return self._send_json(_CACHED_LISTINGS_PAYLOAD)
 
             db = PropertyDatabase(read_only=True)
@@ -658,11 +665,42 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                 if not images and img_url:
                     images = [img_url]
 
-                # 2. Type d'opération (Vente vs Location)
+                # 2. Type d'opération (Vente vs Location) & Détection Colocation
+                title_raw_str = str(row.get("title") or "").strip()
+                url_raw_str = str(row.get("url") or "").strip()
                 trans_type = str(row.get("transaction_type") or "VENTE").upper()
-                is_location = "LOCAT" in trans_type
+                is_location = "LOCAT" in trans_type or "coloc" in title_raw_str.lower() or "/colocation/" in url_raw_str.lower()
                 transaction_type = "LOCATION" if is_location else "VENTE"
                 transaction_label = "Location" if is_location else "Vente"
+
+                # Détection intelligente des offres de Colocation (Chambre dédiée vs Logement éligible colocation)
+                title_url_lower = f"{title_raw_str} {url_raw_str}".lower()
+                desc_lower = desc.lower()
+                is_colocation_dedicated = bool(
+                    re.search(r"\b(?:colocations?|coloc)\b", title_url_lower)
+                    or re.search(
+                        r"\b(?:bien\s+lou[ée]\s+en\s+colocation|chambre\s+(?:en\s+colocation|chez\s+l['’]habitant)|"
+                        r"sous[-\s]location\s+d['’]une\s+chambre|nous\s+sommes\s+une\s+colocation|"
+                        r"rech(?:erche)?\s+(?:un|une)\s+coloc(?:ataire|atrice)?|\d[\d\s.]*\s*(?:000\s*)?(?:f|cfp|xpf)?\s*/\s*chambre)\b",
+                        desc_lower,
+                    )
+                )
+                is_colocation_compatible = (
+                    not is_colocation_dedicated
+                    and is_location
+                    and bool(re.search(r"\b(?:colocations?|colocataires?)\b", desc_lower))
+                )
+                is_colocation = is_colocation_dedicated or is_colocation_compatible
+                colocation_type = (
+                    "chambre_coloc"
+                    if is_colocation_dedicated
+                    else ("logement_eligible" if is_colocation_compatible else None)
+                )
+                colocation_label = (
+                    "🤝 Chambre en Colocation"
+                    if is_colocation_dedicated
+                    else ("🤝 Colocation Acceptée" if is_colocation_compatible else None)
+                )
 
                 # Catégorisation pour filtres frontend
                 is_terrain = prop_type == "TERRAIN"
@@ -685,6 +723,8 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                 elif prop_type == "APPARTEMENT":
                     category = "appartement"
                     category_label = "Appartement"
+                elif is_colocation_dedicated and prop_type in ("AUTRE", ""):
+                    category_label = "Colocation"
 
                 commune_enum = str(row.get("commune") or "NOUMEA").upper()
                 commune_raw = COMMUNE_MAP.get(commune_enum, commune_enum.replace("_", "-").title())
@@ -881,6 +921,8 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                 features = []
                 if is_location:
                     features.append("Location")
+                    if is_colocation and colocation_label:
+                        features.append(colocation_label)
                     if is_furnished is True:
                         features.append("🛋️ Meublé")
                     elif is_furnished is False:
@@ -1018,14 +1060,21 @@ class NCImmoAPIHandler(SimpleHTTPRequestHandler):
                 phone_digits = re.sub(r'\D', '', final_agency_phone)
                 final_whatsapp = f"687{phone_digits[-6:]}" if len(phone_digits) >= 6 and phone_digits[-6] in ('7', '8', '9') else None
 
+                display_title = title_raw_str
+                if display_title.lower() == "colocation":
+                    display_title = f"Colocation à {commune_raw}" + (f" ({quartier})" if quartier and quartier != "Secteur Calédonien" else "")
+
                 listings.append({
                     "id": str(row.get("id")),
-                    "title": str(row.get("title")),
+                    "title": display_title,
                     "category": category,
                     "categoryLabel": category_label,
                     "transactionType": transaction_type,
                     "transactionTypeLabel": transaction_label,
                     "isLocation": is_location,
+                    "isColocation": is_colocation,
+                    "colocationType": colocation_type,
+                    "colocationLabel": colocation_label,
                     "isFurnished": is_furnished,
                     "furnishedLabel": furnished_label,
                     "commune": commune_raw,

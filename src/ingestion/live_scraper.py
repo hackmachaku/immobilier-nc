@@ -406,8 +406,14 @@ class LiveNCScraper:
             if not item_id:
                 return None
 
-            title = f"{item.get('lib_bien', '')} {item.get('lib_sous_types', '')}".strip() or "Bien immobilier"
-            loc_str = f"{item.get('suburb', '')} {item.get('location', '')}".strip()
+            lib_bien = str(item.get("lib_bien") or "").strip()
+            lib_sous = str(item.get("lib_sous_types") or "").strip()
+            if lib_sous.lower() == "none":
+                lib_sous = ""
+            title = f"{lib_bien} {lib_sous}".strip() or "Bien immobilier"
+            suburb_str = str(item.get("suburb") or "").strip()
+            loc_city = str(item.get("location") or "").strip()
+            loc_str = f"{suburb_str} {loc_city}".strip()
             price_str = item.get("prix_annonce")
             is_loc = deal_type.lower() == "location" or "location" in deal_type.lower()
 
@@ -800,12 +806,19 @@ class LiveNCScraper:
                     logger.warning(f"Erreur traitement page Immo.nc : {e}")
 
         # 3. Hydratation multithreadée des fiches détaillées pour zéro perte de données
-        if hydrate_details and page_listings:
-            logger.info(f"Hydratation haute fidélité de {len(page_listings)} annonces Immo.nc...")
+        # Inclure également toutes les offres de colocation issues du flux cartographique
+        coloc_geo_items = [
+            rl for sid, rl in listings_map.items()
+            if ("coloc" in (rl.title or "").lower() or "coloc" in (rl.url or "").lower())
+            and not any(p.source_id == sid for p in page_listings)
+        ]
+        items_to_hydrate = page_listings + coloc_geo_items
+        if hydrate_details and items_to_hydrate:
+            logger.info(f"Hydratation haute fidélité de {len(items_to_hydrate)} annonces Immo.nc (dont {len(coloc_geo_items)} colocations)...")
             with ThreadPoolExecutor(max_workers=8) as ex_hydr:
-                hydrated_results = list(ex_hydr.map(self.hydrate_raw_listing, page_listings))
+                hydrated_results = list(ex_hydr.map(self.hydrate_raw_listing, items_to_hydrate))
         else:
-            hydrated_results = page_listings
+            hydrated_results = items_to_hydrate
 
         # Fusion des annonces hydratées dans le dictionnaire
         for rl in hydrated_results:

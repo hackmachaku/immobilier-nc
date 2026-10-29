@@ -332,6 +332,10 @@
           <button onclick="setFilter('category', 'maison_riviere_mer')" class="category-btn px-3.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-all flex items-center gap-1.5">
             <span>🌊 Mer & Rivière</span>
           </button>
+          <button onclick="setFilter('category', 'colocation')" class="category-btn px-3.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-all flex items-center gap-1.5 border border-pink-500/40" title="Filtrer toutes les chambres en colocation et les villas/appartements acceptant la colocation">
+            <span>🤝 Colocations</span>
+            <span id="colocCountBadge" class="px-1.5 py-0.5 bg-pink-500/25 text-pink-200 rounded-full text-[10px] font-bold">0</span>
+          </button>
         </div>
 
         <!-- Commune, Transaction, Agency & Opportunity Filters -->
@@ -340,6 +344,7 @@
             <option value="all">🏷️ Toutes opérations (Ventes & Locations)</option>
             <option value="VENTE">🏡 Vente / Achat uniquement</option>
             <option value="LOCATION">🔑 Location uniquement</option>
+            <option value="COLOCATION">🤝 Colocation uniquement (Chambre ou Logement partageable)</option>
           </select>
 
           <!-- FILTRE AGENCES NC DYNAMIQUE -->
@@ -828,6 +833,32 @@
                 <span class="text-[10px] text-emerald-400">Actif • Rayon 35km</span>
               </div>
               <span class="px-2 py-1 rounded bg-slate-800 text-[10px] text-slate-300">Marketplace</span>
+            </div>
+
+            <div class="p-3 rounded-xl bg-pink-950/25 border border-pink-500/40 flex items-center justify-between">
+              <div>
+                <h4 class="text-xs font-bold text-pink-200 flex items-center gap-1.5">🤝 Colocation Nouvelle-Calédonie / Nouméa (Groupes Publics)</h4>
+                <p class="text-[11px] text-slate-300">Groupes publics dédiés aux chambres & colocations sur Nouméa / Grand Nouméa</p>
+                <div class="flex items-center gap-2 mt-1">
+                  <a href="https://www.facebook.com/groups/search/groups/?q=colocation%20noumea" target="_blank" rel="noopener noreferrer" class="text-[10.5px] text-pink-300 hover:text-white underline font-semibold">🔗 Ouvrir les Groupes Colocation NC ↗</a>
+                  <span class="text-slate-600">•</span>
+                  <a href="https://www.facebook.com/search/posts/?q=colocation%20noumea" target="_blank" rel="noopener noreferrer" class="text-[10.5px] text-sky-300 hover:text-white underline font-semibold">🔍 Posts publics "Colocation Nouméa" ↗</a>
+                </div>
+              </div>
+              <span class="px-2 py-1 rounded bg-pink-500/20 text-[10px] font-bold text-pink-200 border border-pink-500/30">Colocation NC</span>
+            </div>
+
+            <div class="p-3 rounded-xl bg-pink-950/25 border border-pink-500/40 flex items-center justify-between">
+              <div>
+                <h4 class="text-xs font-bold text-pink-200 flex items-center gap-1.5">🎓 Étudiants UNC & Jeunes Actifs — Colocation & Chambres</h4>
+                <p class="text-[11px] text-slate-300">Offres de chambres meublées chez l'habitant, villas partagées & Marketplace Coloc</p>
+                <div class="flex items-center gap-2 mt-1">
+                  <a href="https://www.facebook.com/marketplace/noumea/search/?query=colocation" target="_blank" rel="noopener noreferrer" class="text-[10.5px] text-pink-300 hover:text-white underline font-semibold">🏷️ Marketplace Colocation Nouméa ↗</a>
+                  <span class="text-slate-600">•</span>
+                  <a href="https://www.facebook.com/search/posts/?q=chambre%20a%20louer%20noumea" target="_blank" rel="noopener noreferrer" class="text-[10.5px] text-sky-300 hover:text-white underline font-semibold">🔍 Posts "Chambre à louer Nouméa" ↗</a>
+                </div>
+              </div>
+              <span class="px-2 py-1 rounded bg-pink-500/20 text-[10px] font-bold text-pink-200 border border-pink-500/30">Public & Étudiants</span>
             </div>
           </div>
         </div>
@@ -1435,12 +1466,14 @@
           <div class="flex items-center gap-2 flex-wrap">
             <div class="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs">
               <label for="aiBatchLimitSelect" class="text-slate-400">Volume :</label>
-              <select id="aiBatchLimitSelect" class="bg-transparent text-white font-semibold focus:outline-none cursor-pointer">
-                <option value="10">10 annonces (~1 min)</option>
-                <option value="25" selected>25 annonces (~2.5 min)</option>
-                <option value="50">50 annonces (~5 min)</option>
-                <option value="100">100 annonces (~10 min)</option>
-                <option value="999999">Toutes les non-enrichies</option>
+              <select id="aiBatchLimitSelect" onchange="onAiBatchLimitChange()" class="bg-slate-900 text-white font-semibold focus:outline-none cursor-pointer">
+                <option value="10" class="bg-slate-900 text-white">10 annonces (~1 min)</option>
+                <option value="25" selected class="bg-slate-900 text-white">25 annonces (~2.5 min)</option>
+                <option value="50" class="bg-slate-900 text-white">50 annonces (~5 min)</option>
+                <option value="100" class="bg-slate-900 text-white">100 annonces (~10 min)</option>
+                <option value="999999" class="bg-slate-900 text-sky-300 font-semibold">Toutes les non-enrichies</option>
+                <option value="FORCE_ALL" class="bg-slate-900 text-amber-300 font-bold">🔄 Toutes les annonces (Forcer même déjà faites — IA)</option>
+                <option value="FORCE_ALL_FAST" class="bg-slate-900 text-emerald-300 font-bold">⚡ Toutes les annonces (Forcer même déjà faites — Rapide ~5s)</option>
               </select>
             </div>
 
@@ -1457,7 +1490,7 @@
         <!-- Options secondaires -->
         <div class="flex items-center justify-between text-xs flex-wrap gap-2 text-slate-300">
           <label class="flex items-center gap-2 cursor-pointer select-none">
-            <input type="checkbox" id="aiBatchOnlyMissingCheckbox" checked class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-sky-500 focus:ring-0">
+            <input type="checkbox" id="aiBatchOnlyMissingCheckbox" onchange="onAiBatchOnlyMissingChange()" checked class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-sky-500 focus:ring-0">
             <span>Traiter uniquement les annonces qui n'ont pas encore été enrichies par l'IA</span>
           </label>
           <div class="text-[11px] text-slate-400" id="aiBatchSummaryText">
@@ -2626,8 +2659,23 @@
           btn.classList.remove('active', 'bg-sky-500', 'text-white');
           btn.classList.add('bg-slate-800', 'text-slate-300');
         });
-        event.currentTarget.classList.add('active', 'bg-sky-500', 'text-white');
-        event.currentTarget.classList.remove('bg-slate-800', 'text-slate-300');
+        if (event && event.currentTarget) {
+          event.currentTarget.classList.add('active', 'bg-sky-500', 'text-white');
+          event.currentTarget.classList.remove('bg-slate-800', 'text-slate-300');
+        }
+        // Si l'utilisateur clique sur Colocations, adapter automatiquement l'échelle de budget aux loyers mensuels
+        if (value === 'colocation' && priceScaleMode !== 'LOCATION') {
+          priceScaleMode = 'LOCATION';
+          const cfg = PRICE_CONFIGS[priceScaleMode];
+          const minSlider = document.getElementById('priceMinSlider');
+          const maxSlider = document.getElementById('priceMaxSlider');
+          if (minSlider) { minSlider.max = cfg.maxSteps; minSlider.value = 0; }
+          if (maxSlider) { maxSlider.max = cfg.maxSteps; maxSlider.value = cfg.maxSteps; }
+          activePricePreset = 'all';
+          priceFilterMin = 0;
+          priceFilterMax = null;
+          updatePriceSliderUI();
+        }
       }
       filterListings();
     }
@@ -2654,6 +2702,10 @@
 
       const allBadge = document.getElementById('allCountBadge');
       if (allBadge) allBadge.textContent = totalCount;
+
+      const colocCount = listingsData.filter(x => x.isColocation === true).length;
+      const colocBadge = document.getElementById('colocCountBadge');
+      if (colocBadge) colocBadge.textContent = colocCount;
     }
 
     function filterByKpi(type) {
@@ -2924,7 +2976,7 @@
     function onTransactionFilterChange() {
       const sel = document.getElementById('transactionFilter');
       const val = sel ? sel.value : 'all';
-      if (val === 'LOCATION') {
+      if (val === 'LOCATION' || val === 'COLOCATION') {
         priceScaleMode = 'LOCATION';
       } else {
         priceScaleMode = 'VENTE';
@@ -2966,11 +3018,11 @@
       updateKpiActiveStyles(opportunity);
 
       let filtered = listingsData.filter(item => {
-        const matchesCategory = activeCategory === 'all' || item.category === activeCategory;
+        const matchesCategory = activeCategory === 'all' || (activeCategory === 'colocation' ? item.isColocation === true : item.category === activeCategory);
         const itemCommune = normStr(item.commune);
         const matchesCommune = commune === 'all' || itemCommune.includes(commune) || commune.includes(itemCommune);
         const itemTrans = item.transactionType || (item.isLocation ? 'LOCATION' : 'VENTE');
-        const matchesTransaction = transaction === 'all' || itemTrans === transaction;
+        const matchesTransaction = transaction === 'all' || (transaction === 'COLOCATION' ? item.isColocation === true : itemTrans === transaction);
         
         const itemAgency = normStr(item.agencyName);
         const matchesAgency = !agency || agency === 'all' || itemAgency.includes(agency) || agency.includes(itemAgency);
@@ -3063,6 +3115,46 @@
           if (bannerIcon) bannerIcon.textContent = "✍️";
           if (bannerTitle) bannerTitle.innerHTML = `<span class="text-purple-300 font-bold text-sm">Filtre actif : ${filtered.length} saisie${filtered.length > 1 ? 's' : ''} manuelle${filtered.length > 1 ? 's' : ''}</span>`;
           if (bannerSub) bannerSub.textContent = "Offres ajoutées manuellement par vos soins.";
+        } else if (activeCategory === 'colocation' || transaction === 'COLOCATION') {
+          banner.classList.remove('hidden');
+          banner.className = "p-4 rounded-xl bg-gradient-to-r from-pink-950/60 via-slate-900 to-indigo-950/50 border border-pink-500/40 flex flex-col lg:flex-row lg:items-center justify-between gap-3 transition-all shadow-lg shadow-pink-950/20";
+          const dedicatedCount = filtered.filter(x => x.colocationType === 'chambre_coloc').length;
+          const eligibleCount = filtered.filter(x => x.colocationType === 'logement_eligible').length;
+          const bySource = {};
+          filtered.forEach(x => { bySource[x.source] = (bySource[x.source] || 0) + 1; });
+          const sourcesSummary = Object.entries(bySource).map(([s, c]) => `<span class="px-2 py-0.5 rounded bg-slate-800/90 text-pink-200 border border-pink-500/30 font-semibold">${s} : ${c}</span>`).join(' ');
+          if (bannerIcon) bannerIcon.textContent = "🤝";
+          if (bannerTitle) {
+            bannerTitle.innerHTML = `
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-pink-300 font-bold text-sm">Où trouver des colocations en NC : ${filtered.length} offre${filtered.length > 1 ? 's' : ''} active${filtered.length > 1 ? 's' : ''} détectée${filtered.length > 1 ? 's' : ''}</span>
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-pink-500/25 text-pink-200 border border-pink-400/40">🛏️ ${dedicatedCount} chambre${dedicatedCount > 1 ? 's' : ''} en coloc dédiée${dedicatedCount > 1 ? 's' : ''}</span>
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/25 text-indigo-200 border border-indigo-400/40">🏡 ${eligibleCount} logement${eligibleCount > 1 ? 's' : ''} éligible${eligibleCount > 1 ? 's' : ''} colocation</span>
+              </div>
+            `;
+          }
+          if (bannerSub) {
+            bannerSub.innerHTML = `
+              <div class="mt-1.5 space-y-2">
+                <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-300">
+                  <span class="text-slate-400 font-medium">Portails immobiliers :</span>
+                  ${sourcesSummary || '<span class="text-slate-400">Aucune offre sur ce filtre</span>'}
+                </div>
+                <div class="flex flex-wrap items-center gap-2 text-[11px] pt-1 border-t border-slate-800/80">
+                  <span class="text-pink-300 font-semibold">🌐 Groupes Publics Facebook Colocation NC (Accès direct 1-clic) :</span>
+                  <a href="https://www.facebook.com/search/posts/?q=colocation%20noumea" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1 rounded-lg bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-400/40 font-semibold transition-all inline-flex items-center gap-1">
+                    <span>🔵 Posts Publics "Colocation Nouméa"</span><span>↗</span>
+                  </a>
+                  <a href="https://www.facebook.com/groups/search/groups/?q=colocation%20noumea" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-400/40 font-semibold transition-all inline-flex items-center gap-1">
+                    <span>👥 Groupes FB Colocation NC</span><span>↗</span>
+                  </a>
+                  <a href="https://www.facebook.com/marketplace/noumea/search/?query=colocation" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1 rounded-lg bg-pink-600/30 hover:bg-pink-600/50 text-pink-200 border border-pink-400/40 font-semibold transition-all inline-flex items-center gap-1">
+                    <span>🏷️ FB Marketplace Colocation</span><span>↗</span>
+                  </a>
+                </div>
+              </div>
+            `;
+          }
         } else {
           banner.classList.add('hidden');
         }
@@ -3342,6 +3434,11 @@
                 <!-- Badges descriptifs : retour à la ligne automatique et borné -->
                 <div class="flex flex-wrap items-center gap-1.5 flex-1 min-w-0 pointer-events-auto">
                   ${transBadge}
+                  ${item.isColocation ? `
+                    <span class="px-2 py-0.5 rounded text-[11px] font-extrabold ${item.colocationType === 'chambre_coloc' ? 'bg-pink-500/35 text-pink-100 border border-pink-400/60' : 'bg-fuchsia-500/30 text-fuchsia-200 border border-fuchsia-400/50'} flex items-center gap-1 shadow-sm backdrop-blur-md">
+                      ${item.colocationLabel || '🤝 Colocation'}
+                    </span>
+                  ` : ''}
                   ${categoryTag}
                   ${roomBadge}
                   ${furnishedBadge}
@@ -3683,6 +3780,11 @@
           <div class="absolute bottom-5 left-6 right-6 z-10 pointer-events-auto">
             <div class="flex items-center gap-2 mb-2 flex-wrap">
               ${transBadge}
+              ${item.isColocation ? `
+                <span class="px-3 py-1 rounded-lg text-xs font-extrabold ${item.colocationType === 'chambre_coloc' ? 'bg-pink-600 text-white' : 'bg-fuchsia-600 text-white'} shadow-md flex items-center gap-1">
+                  ${item.colocationLabel || '🤝 Colocation'}
+                </span>
+              ` : ''}
               <span class="px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-white shadow-md">
                 ${item.categoryLabel}
               </span>
@@ -5805,9 +5907,54 @@
     // =========================================================================
     let aiBatchPollTimer = null;
 
+    function onAiBatchLimitChange() {
+      const sel = document.getElementById('aiBatchLimitSelect');
+      const cb = document.getElementById('aiBatchOnlyMissingCheckbox');
+      if (!sel || !cb) return;
+      if (sel.value === 'FORCE_ALL' || sel.value === 'FORCE_ALL_FAST') {
+        cb.checked = false;
+      } else if (sel.value === '999999') {
+        cb.checked = true;
+      }
+    }
+
+    function onAiBatchOnlyMissingChange() {
+      const sel = document.getElementById('aiBatchLimitSelect');
+      const cb = document.getElementById('aiBatchOnlyMissingCheckbox');
+      if (!sel || !cb) return;
+      if (!cb.checked && sel.value === '999999') {
+        sel.value = 'FORCE_ALL';
+      } else if (cb.checked && (sel.value === 'FORCE_ALL' || sel.value === 'FORCE_ALL_FAST')) {
+        sel.value = '999999';
+      }
+    }
+
     async function startAiBatch() {
-      const limit = parseInt(document.getElementById('aiBatchLimitSelect').value) || 25;
-      const onlyMissing = document.getElementById('aiBatchOnlyMissingCheckbox').checked;
+      const rawVal = document.getElementById('aiBatchLimitSelect').value;
+      const cb = document.getElementById('aiBatchOnlyMissingCheckbox');
+      let limit = 25;
+      let onlyMissing = cb ? cb.checked : true;
+      let forceAll = false;
+      let provider = document.getElementById('aiProviderSelect') ? document.getElementById('aiProviderSelect').value : 'ollama';
+
+      if (rawVal === 'FORCE_ALL') {
+        limit = 999999;
+        onlyMissing = false;
+        forceAll = true;
+        if (cb) cb.checked = false;
+      } else if (rawVal === 'FORCE_ALL_FAST') {
+        limit = 999999;
+        onlyMissing = false;
+        forceAll = true;
+        provider = 'deterministic';
+        if (cb) cb.checked = false;
+      } else if (rawVal === '999999') {
+        limit = 999999;
+        forceAll = !onlyMissing;
+      } else {
+        limit = parseInt(rawVal) || 25;
+      }
+
       const model = document.getElementById('aiModelSelect') ? document.getElementById('aiModelSelect').value : null;
 
       const btnStart = document.getElementById('btnStartAiBatch');
@@ -5827,8 +5974,8 @@
       if (pBar) pBar.style.width = '0%';
       if (pPct) pPct.textContent = '0%';
       if (pCount) pCount.textContent = `(0 / ${limit === 999999 ? 'Toutes' : limit})`;
-      if (pTitle) pTitle.textContent = 'Démarrage du worker IA en arrière-plan...';
-      if (pStatus) pStatus.textContent = 'Traitement en cours...';
+      if (pTitle) pTitle.textContent = forceAll ? 'Réinitialisation du cache et re-scan intégral de toutes les annonces...' : 'Démarrage du worker IA en arrière-plan...';
+      if (pStatus) pStatus.textContent = forceAll ? 'Ré-analyse intégrale en cours...' : 'Traitement en cours...';
       if (pElapsed) pElapsed.textContent = '(0s)';
 
       try {
@@ -5839,12 +5986,15 @@
           body: JSON.stringify({
             limit: limit,
             only_missing: onlyMissing,
+            force_all: forceAll,
+            provider: provider,
             model: model
           })
         });
         const res = await resp.json();
         if (res.success) {
-          showNotificationToast("Traitement par lot démarré", `Analyse de ${limit === 999999 ? 'toutes les' : limit} annonce(s) lancée en tâche de fond.`, "info");
+          const modeLabel = forceAll ? 'TOUTES les annonces (ré-analyse forcée)' : `${limit === 999999 ? 'toutes les nouvelles' : limit} annonce(s)`;
+          showNotificationToast("Traitement par lot démarré", `Analyse de ${modeLabel} lancée en tâche de fond.`, "info");
           pollAiBatchStatus();
         } else {
           showNotificationToast("Attention", res.error || "Impossible de démarrer le lot.", "error");

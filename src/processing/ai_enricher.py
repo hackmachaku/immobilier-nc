@@ -7,6 +7,7 @@ le dialogue interactif (Chatbot Q&R sur annonces) et la persistance DuckDB.
 
 import os
 import sys
+import re
 import json
 import time
 import hashlib
@@ -796,13 +797,17 @@ def enrich_listing_with_ai(
     listing_data: Any,
     custom_prompt: Optional[str] = None,
     custom_model: Optional[str] = None,
-    force_refresh: bool = False
+    force_refresh: bool = False,
+    custom_provider: Optional[str] = None,
+    persist_cache: bool = True,
+    _cached_cfg: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Enrichit sémantiquement une annonce immobilière.
     Utilise le modèle Ollama configuré ou le repli déterministe Tier-1.
     """
-    cfg = get_ai_config()
+    cfg = _cached_cfg if _cached_cfg is not None else get_ai_config()
+    provider = (custom_provider or cfg.get("provider", "ollama")).lower()
     model = custom_model or cfg.get("model", "qwen2.5:3b")
     system_prompt = custom_prompt or cfg.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
     timeout_sec = float(cfg.get("timeout_seconds", 40.0))
@@ -886,38 +891,39 @@ def enrich_listing_with_ai(
     ai_result: Dict[str, Any] = {}
     tokens_generated = 0
 
-    try:
-        req_body = json.dumps({
-            "model": model,
-            "prompt": user_message,
-            "system": system_prompt,
-            "format": "json",
-            "stream": False,
-            "options": {
-                "temperature": float(cfg.get("temperature", 0.1)),
-                "num_ctx": 2048,
-                "num_thread": 4
-            },
-            "keep_alive": "5m"
-        }).encode("utf-8")
+    if provider not in ("deterministic", "heuristic_fallback"):
+        try:
+            req_body = json.dumps({
+                "model": model,
+                "prompt": user_message,
+                "system": system_prompt,
+                "format": "json",
+                "stream": False,
+                "options": {
+                    "temperature": float(cfg.get("temperature", 0.1)),
+                    "num_ctx": 2048,
+                    "num_thread": 4
+                },
+                "keep_alive": "5m"
+            }).encode("utf-8")
 
-        req = urllib.request.Request(
-            generate_url,
-            data=req_body,
-            headers={"Content-Type": "application/json", "User-Agent": "Sentinel-ImmoNC/1.0"}
-        )
+            req = urllib.request.Request(
+                generate_url,
+                data=req_body,
+                headers={"Content-Type": "application/json", "User-Agent": "Sentinel-ImmoNC/1.0"}
+            )
 
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-            if resp.status == 200:
-                resp_json = json.loads(resp.read().decode("utf-8"))
-                response_text = resp_json.get("response", "{}")
-                ai_parsed = json.loads(response_text)
-                if isinstance(ai_parsed, dict) and ("rubriques" in ai_parsed or "sections" in ai_parsed or "direct_contacts" in ai_parsed):
-                    ai_result = ai_parsed
-                    ollama_success = True
-                    tokens_generated = resp_json.get("eval_count", 0)
-    except Exception as e:
-        logger.info(f"Ollama indisponible ({e}), bascule immédiate vers Tier-1.")
+            with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+                if resp.status == 200:
+                    resp_json = json.loads(resp.read().decode("utf-8"))
+                    response_text = resp_json.get("response", "{}")
+                    ai_parsed = json.loads(response_text)
+                    if isinstance(ai_parsed, dict) and ("rubriques" in ai_parsed or "sections" in ai_parsed or "direct_contacts" in ai_parsed):
+                        ai_result = ai_parsed
+                        ollama_success = True
+                        tokens_generated = resp_json.get("eval_count", 0)
+        except Exception as e:
+            logger.info(f"Ollama indisponible ({e}), bascule immédiate vers Tier-1.")
 
     latency_ms = int((time.time() - t_start) * 1000)
 
@@ -950,7 +956,8 @@ def enrich_listing_with_ai(
         tok_s = round((tokens_generated / (latency_ms / 1000.0)), 1) if latency_ms > 0 and tokens_generated > 0 else 0
         provider_used = f"Ollama ({model})"
         fallback_tier1 = False
-        _save_cached_enrichment(listing_id, model, input_hash, direct_contacts, sections, ai_result, latency_ms)
+        if persist_cache:
+            _save_cached_enrichment(listing_id, model, input_hash, direct_contacts, sections, ai_result, latency_ms)
     else:
         # Repli robuste et garanti Tier-1 déterministe
         t1_start = time.time()
@@ -969,14 +976,17 @@ def enrich_listing_with_ai(
         tok_s = 1250.0  # Vitesse native python regex
         latency_ms = t1_ms if latency_ms < 50 else latency_ms
         provider_used = "Tier-1 Déterministe (Regex & Heuristiques Calédoniennes)"
-        fallback_tier1 = True
+        fallback_tier1 = (provider not in ("deterministic", "heuristic_fallback"))
+        if persist_cache and provider in ("deterministic", "heuristic_fallback"):
+            _save_cached_enrichment(listing_id, "Tier-1 Déterministe", input_hash, direct_contacts, sections, ai_result, latency_ms)
 
     return {
         "id": listing_id,
+        "input_hash": input_hash,
         "cached": False,
         "provider_used": provider_used,
         "fallback_tier1": fallback_tier1,
-        "model": model,
+        "model": model if ollama_success else ("Tier-1 Déterministe" if provider in ("deterministic", "heuristic_fallback") else model),
         "latency_ms": latency_ms,
         "tokens_per_second": tok_s,
         "direct_contacts": direct_contacts,
@@ -1098,15 +1108,25 @@ def batch_enrich_listings(
     only_missing: bool = True,
     custom_model: Optional[str] = None,
     stop_event: Optional[Any] = None,
-    progress_callback: Optional[Any] = None
+    progress_callback: Optional[Any] = None,
+    force_all: bool = False,
+    custom_provider: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Enrichit par lot les annonces enregistrées dans la base DuckDB.
+    Supporte le mode incrémental (only_missing=True) ou la ré-analyse intégrale forcée (force_all=True / only_missing=False).
     Enregistre chaque résultat en cache dans listing_ai_enrichment.
     """
     import duckdb
     if not DB_PATH.exists():
         return {"success": False, "error": f"Base de données introuvable : {DB_PATH}"}
+
+    if force_all:
+        only_missing = False
+        clear_ai_cache()
+
+    cfg = get_ai_config()
+    effective_provider = (custom_provider or cfg.get("provider", "ollama")).lower()
 
     init_ai_cache_table()
     con = duckdb.connect(str(DB_PATH), read_only=True)
@@ -1116,7 +1136,7 @@ def batch_enrich_listings(
         where_parts.append("id NOT IN (SELECT listing_id FROM listing_ai_enrichment WHERE extracted_contacts_json IS NOT NULL)")
     where_clause = "WHERE " + " AND ".join(where_parts)
 
-    limit_clause = f"LIMIT {int(limit)}" if limit > 0 else ""
+    limit_clause = f"LIMIT {int(limit)}" if 0 < limit < 500000 else ""
     query = f"""
         SELECT id, title, property_type, commune, quartier, price_xpf, description, agency_name
         FROM listings
@@ -1133,18 +1153,77 @@ def batch_enrich_listings(
         con.close()
 
     total = len(df)
+    if progress_callback:
+        progress_callback(0, total, f"Démarrage de l'analyse sur {total} annonce(s)...")
+
     results = []
     enriched_count = 0
+    pending_cache_rows: List[Tuple[Any, ...]] = []
+
+    def _flush_pending_cache_rows():
+        nonlocal pending_cache_rows
+        if not pending_cache_rows:
+            return
+        try:
+            import pandas as pd
+            batch_df = pd.DataFrame(
+                pending_cache_rows,
+                columns=[
+                    "listing_id",
+                    "model_version",
+                    "input_hash",
+                    "extracted_contacts_json",
+                    "structured_sections_json",
+                    "raw_response_json",
+                    "latency_ms"
+                ]
+            )
+            with duckdb.connect(str(DB_PATH)) as wcon:
+                wcon.register("batch_df", batch_df)
+                wcon.execute(
+                    """
+                    INSERT OR REPLACE INTO listing_ai_enrichment
+                    (listing_id, model_version, enriched_at, input_hash, extracted_contacts_json, structured_sections_json, raw_response_json, latency_ms)
+                    SELECT listing_id, model_version, CURRENT_TIMESTAMP, input_hash, extracted_contacts_json, structured_sections_json, raw_response_json, latency_ms
+                    FROM batch_df
+                    """
+                )
+        except Exception as e:
+            logger.warning(f"Erreur sauvegarde lot cache IA: {e}")
+        pending_cache_rows = []
+
+    is_fast_deterministic = (effective_provider == "deterministic")
 
     for idx, row in df.iterrows():
         if stop_event and stop_event.is_set():
             break
 
         item = row.to_dict()
-        if progress_callback:
+        if progress_callback and (not is_fast_deterministic or enriched_count % 50 == 0):
             progress_callback(enriched_count, total, f"Analyse : {item.get('title') or 'Annonce'}")
 
-        res = enrich_listing_with_ai(item, custom_model=custom_model, force_refresh=True)
+        if is_fast_deterministic and enriched_count % 25 == 0:
+            time.sleep(0.001)
+
+        res = enrich_listing_with_ai(
+            item,
+            custom_model=custom_model,
+            force_refresh=True,
+            custom_provider=effective_provider,
+            persist_cache=(not is_fast_deterministic),
+            _cached_cfg=cfg
+        )
+        if is_fast_deterministic:
+            pending_cache_rows.append((
+                str(item.get("id")),
+                res.get("model") or "Tier-1 Déterministe",
+                res.get("input_hash") or "",
+                json.dumps(res.get("direct_contacts", []), ensure_ascii=False),
+                json.dumps(res.get("sections", []), ensure_ascii=False),
+                json.dumps(res.get("raw_response", {}), ensure_ascii=False),
+                int(res.get("latency_ms") or 1)
+            ))
+
         results.append({
             "id": item.get("id"),
             "title": item.get("title"),
@@ -1154,12 +1233,15 @@ def batch_enrich_listings(
             "latency_ms": res.get("latency_ms")
         })
         enriched_count += 1
-        if progress_callback:
+        if progress_callback and (not is_fast_deterministic or enriched_count % 50 == 0 or enriched_count == total):
             progress_callback(enriched_count, total, f"Terminé : {item.get('title') or 'Annonce'}")
+
+    if pending_cache_rows:
+        _flush_pending_cache_rows()
 
     return {
         "success": True,
-        "total_requested": limit,
+        "total_requested": total if limit >= 500000 else limit,
         "processed_count": enriched_count,
-        "results": results
+        "results": results[:100]
     }

@@ -442,4 +442,36 @@ def test_villa_f4_kone_immonc_5332720_ai_reconciliation():
     assert any("garage" == it.lower() for it in sec_by_key["stationnement_annexes"])
 
 
+def test_batch_enrich_listings_force_all_rescan():
+    """
+    Valide que batch_enrich_listings permet de forcer la ré-analyse complète
+    même pour les annonces déjà enrichies (force_all=True / only_missing=False).
+    """
+    from src.processing.ai_enricher import batch_enrich_listings, get_ai_cache_stats
+
+    # 1. Premier passage sur 5 annonces
+    res1 = batch_enrich_listings(limit=5, only_missing=False, force_all=True, custom_provider="deterministic")
+    assert res1["success"] is True
+    assert res1["processed_count"] == 5
+
+    stats1 = get_ai_cache_stats()
+    assert stats1["cached_count"] >= 5
+
+    # 2. Second passage avec force_all=True : doit re-scanner les 5 mêmes annonces (et non 0)
+    progress_steps = []
+    res2 = batch_enrich_listings(
+        limit=5,
+        only_missing=False,
+        force_all=True,
+        custom_provider="deterministic",
+        progress_callback=lambda c, t, m: progress_steps.append((c, t))
+    )
+    assert res2["success"] is True
+    assert res2["processed_count"] == 5
+    assert len(progress_steps) >= 2
+    assert progress_steps[0] == (0, 5)
+    assert progress_steps[-1] == (5, 5)
+
+
+
 
